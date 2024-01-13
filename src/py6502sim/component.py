@@ -34,18 +34,30 @@ class Component:
                 f'Invalid maximum address for component: 0x{max_address:04X}'
             )
 
-        self.max_address = max_address
-        self.name = component_name
+        self._max_address = max_address
+        self._name = component_name
+
+    def get_name(self):
+        """
+        Return component name
+        """
+        return self._name
+
+    def get_max_address(self):
+        """
+        Return component maximum address value
+        """
+        return self._max_address
 
     def _address_and_data_check(self, address: int, data: int):
-        if not 0x0000 <= address <= self.max_address:
+        if not 0x0000 <= address <= self._max_address:
             raise AddressOutOfRange(
-                f'[{self.name}] Invalid address accessed: 0x{address:04X}.'
-                f' Max address is: 0x{self.max_address:04X}.'
+                f'[{self._name}] Invalid address accessed: 0x{address:04X}.'
+                f' Max address is: 0x{self._max_address:04X}.'
             )
 
         if not 0x00 <= data <= 0xff:
-            raise InvalidData(f'[{self.name}] Invalid byte value obtained: 0x{data:02X}')
+            raise InvalidData(f'[{self._name}] Invalid byte value obtained: 0x{data:02X}')
 
 
     def execute(self, address: int, data: int, flags: dict) -> int:
@@ -64,13 +76,13 @@ class Component:
 
         return self._read(address) if flags['RWB'] else self._write(address, data)
 
-    def _read(self, address: int) -> int:
+    def _read(self, _address: int) -> int:
         # Process address read here
 
         # Base class always returns 0
         return 0
 
-    def _write(self, address: int, data: int):
+    def _write(self, _address: int, data: int):
         # Process data write to address here
 
         # Base class simply echoes data
@@ -81,9 +93,9 @@ class Component:
 
     def __str__(self):
         str_output = (
-            f'Component name: {self.name}\n'
+            f'Component name: {self._name}\n'
             f'Component type: {type(self).__name__}'
-            f'Internal address range: 0x0000 - 0x{self.max_address:04X}\n'
+            f'Internal address range: 0x0000 - 0x{self._max_address:04X}\n'
             f'{self._detail_str_output()}'
         )
 

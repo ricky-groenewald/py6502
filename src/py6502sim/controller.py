@@ -40,14 +40,17 @@ class Controller(Component):
             address_start (int): Address offset where the controller should begin assigning
                 address space to the component
         """
-        address_end = component.max_address + address_start
+        address_end = component.get_max_address() + address_start
         if address_end > 0xffff:
             raise ComponentSizeError(
-                f'Unable to fit {component.name} in at address 0x{address_start:04X}. '
+                f'[{self._name}] Unable to fit {component.get_name()} in '
+                f'at address 0x{address_start:04X}.'
             )
 
         if component in [c[0] for c in self._components]:
-            raise ComponentExistsError('Component already added to controller.')
+            raise ComponentExistsError(
+                f'[{self._name}] Component {component.get_name()} already added to controller.'
+            )
 
         for existing_comp in self._components:
             if (
@@ -55,8 +58,8 @@ class Controller(Component):
                 existing_comp[1] <= address_end <= existing_comp[2]
             ):
                 raise AddressRangeUnavailable(
-                    f'Component {component.name} cannot be added. '
-                    f'Address range will overlap with {existing_comp[0].name}'
+                    f'[{self._name}] Component {component.get_name()} cannot be added. '
+                    f'Address range will overlap with {existing_comp[0].get_name()}'
                 )
 
         self._components.append((component, address_start, address_end))
@@ -69,7 +72,9 @@ class Controller(Component):
             if component[1] <= address <= component[2]:
                 return component.execute(address - component[1], data, flags)
 
-        raise UnallocatedAddressError(f'Address not allocated to a component: 0x{address:04X}')
+        raise UnallocatedAddressError(
+            f'[{self._name}] Address not allocated to a component: 0x{address:04X}'
+        )
 
     def _detail_str_output(self):
         return 'Component list:\n' + '\n'.join(
