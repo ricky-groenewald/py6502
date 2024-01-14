@@ -31,7 +31,7 @@ class Controller(Component):
         super().__init__(0xffff, controller_name)
         self._components: list[(Component, int, int)] = []
 
-    def add_component(self, component: Component, address_start: int):
+    def add_component(self, component: Component, address_start: int) -> None:
         """
         Add a component to the controller
 
@@ -65,18 +65,18 @@ class Controller(Component):
         self._components.append((component, address_start, address_end))
         self._components.sort(key=lambda x: x[1])
 
-    def execute(self, address: int, data: int, flags: dict) -> int:
+    def execute(self, address: int, data: int, read_write_bar: bool) -> int:
         self._address_and_data_check(address, data)
 
         for component in self._components:
             if component[1] <= address <= component[2]:
-                return component.execute(address - component[1], data, flags)
+                return component.execute(address - component[1], data, read_write_bar)
 
         raise UnallocatedAddressError(
             f'[{self._name}] Address not allocated to a component: 0x{address:04X}'
         )
 
-    def _detail_str_output(self):
+    def _detail_str_output(self) -> str:
         return 'Component list:\n' + '\n'.join(
             [f'{c[0]} [0x{c[1]:04X} - 0x{c[2]:04X}]' for c in self._components]
         )

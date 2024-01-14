@@ -8,6 +8,11 @@ class WritingToReadOnly(Exception):
     Writing to a memory component set to read-only
     """
 
+class DataSizeError(Exception):
+    """
+    Input data size does not match up with memory data capacity
+    """
+
 class Memory(Component):
     """
     Class definition for a memory component
@@ -26,7 +31,7 @@ class Memory(Component):
             return self._data[address]
         raise WritingToReadOnly(f'[{self._name}] Attempting to write to a read-only component.')
 
-    def _detail_str_output(self):
+    def _detail_str_output(self) -> str:
         str_output = 'Data content:'
 
         for offset in range(0, self._max_address + 1, 16):
@@ -37,3 +42,20 @@ class Memory(Component):
             str_output += ' '.join([f'{byte:02x}' for byte in self._data[offset+8:offset+16]])
 
         return str_output
+
+    def set_data_from_array(self, data: list[int]) -> None:
+        """
+        Overwrites memory with an identically sized data array.
+
+        Bypasses "read_only" value.
+
+        Arguments:
+            data (list[int]): Array of bytes to be uploaded into memory
+        """
+        if len(data) != len(self._data):
+            raise DataSizeError(
+                f'[{self._name}] Cannot upload data into memory. '
+                f'Expected {len(self._data)} bytes, but received {len(data)} bytes.'
+            )
+
+        self._data = data.copy()

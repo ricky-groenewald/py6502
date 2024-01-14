@@ -37,19 +37,19 @@ class Component:
         self._max_address = max_address
         self._name = component_name
 
-    def get_name(self):
+    def get_name(self) -> str:
         """
         Return component name
         """
         return self._name
 
-    def get_max_address(self):
+    def get_max_address(self) -> int:
         """
         Return component maximum address value
         """
         return self._max_address
 
-    def _address_and_data_check(self, address: int, data: int):
+    def _address_and_data_check(self, address: int, data: int) -> None:
         if not 0x0000 <= address <= self._max_address:
             raise AddressOutOfRange(
                 f'[{self._name}] Invalid address accessed: 0x{address:04X}.'
@@ -60,21 +60,21 @@ class Component:
             raise InvalidData(f'[{self._name}] Invalid byte value obtained: 0x{data:02X}')
 
 
-    def execute(self, address: int, data: int, flags: dict) -> int:
+    def execute(self, address: int, data: int, read_write_bar: bool) -> int:
         """
         Execute an instruction given values for the address, data, and various processor flags
 
         Arguments:
             address (int): 16-bit value of the address bus
             data (int): 8-bit value of the data bus
-            flags (dict{key: bool}): A dictionary with all the set processor flags
+            read_write_bar (bool): Boolean value for the RWB pin (Read on 1, Write on 0)
 
         Returns:
             int: Byte value of the data bus after the instruction
         """
         self._address_and_data_check(address, data)
 
-        return self._read(address) if flags['RWB'] else self._write(address, data)
+        return self._read(address) if read_write_bar else self._write(address, data)
 
     def _read(self, _address: int) -> int:
         # Process address read here
@@ -82,16 +82,16 @@ class Component:
         # Base class always returns 0
         return 0
 
-    def _write(self, _address: int, data: int):
+    def _write(self, _address: int, data: int) -> int:
         # Process data write to address here
 
         # Base class simply echoes data
         return data
 
-    def _detail_str_output(self):
+    def _detail_str_output(self) -> str:
         return
 
-    def __str__(self):
+    def __str__(self) -> str:
         str_output = (
             f'Component name: {self._name}\n'
             f'Component type: {type(self).__name__}'
