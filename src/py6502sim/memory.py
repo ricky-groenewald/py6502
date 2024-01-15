@@ -37,9 +37,9 @@ class Memory(Component):
         for offset in range(0, self._max_address + 1, 16):
             str_output += f'\n0x{offset:04X}: '
 
-            str_output += ' '.join([f'{byte:02x}' for byte in self._data[offset:offset+8]])
+            str_output += ' '.join([f'{byte:02X}' for byte in self._data[offset:offset+8]])
             str_output += '    '
-            str_output += ' '.join([f'{byte:02x}' for byte in self._data[offset+8:offset+16]])
+            str_output += ' '.join([f'{byte:02X}' for byte in self._data[offset+8:offset+16]])
 
         return str_output
 
