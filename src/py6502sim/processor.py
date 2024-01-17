@@ -7,11 +7,17 @@ from py6502sim.component import Component
 #   * [IMPLEMENTATION] Implement Decimal Mode in ADC and SBC
 #   * [OPTIMIZATION] Move constants to separate file/class ?? Do I need to? Yes, because I don't
 #                    want users to be exposed to too many weird variables on importing a class
-#   * [OPTIMIZATION] Convert registers from dict -> array
-#   * [OPTIMIZATION] Put data fetch/write addressing modes in array instead of if/else switch case
-#   * [OPTIMIZATION] Include a "QUIET" mode that doesn't log cycles
 #   * [OPTIMIZATION] Move stack PUSH/PULL commands to separate function?
+#   * [OPTIMIZATION] Better solution than "no_skip"?
 
+# Register List Offset Constants
+ACC = 0
+X = 1
+Y = 2
+PCL = 3
+PCH = 4
+S = 5
+P = 6
 
 class MOS6502:
     """
@@ -38,20 +44,20 @@ class MOS6502:
         # )
         self._cycle_log: list[list] = []
 
-        self._registers = {
-            'ACC': 0,   # Accumulator
-            'X': 0,     # Index Register X
-            'Y': 0,     # Index Register Y
-            'PCL': 0,   # Program Counter Low-byte   
-            'PCH': 0,   # Program Counter High-byte
+        self._registers: list[int] = [
+            0,   # Accumulator
+            0,   # Index Register X
+            0,   # Index Register Y
+            0,   # Program Counter Low-byte
+            0,   # Program Counter High-byte
 
-            'S': 0,
+            0,   # Stack Pointer S
             # Stack Pointer S is always "zero-paged". The pointer is always technically a 9-bit
             # number where bit 9 is always "1" and the bits 1 - 8 provide the 8-bit address in the
             # stack. I.e. S always points to addresses in the range 0x0100 ~ 0x01FF. Our
             # implementation will treat S as 8-bit, and assume it is always offset to 0x01XX.
 
-            'P': 0,
+            0, # Processor Status Register P
             # Processor Status Register P is an 8-bit register that contains various flags:
             # Bit 0 - Carry (C)
             # Bit 1 - Zero (Z)
@@ -61,7 +67,7 @@ class MOS6502:
             # Bit 5 -
             # Bit 6 - Overflow (V)
             # Bit 7 - Negative (N)
-        }
+        ]
 
         # This is easier to type and organize for a human
         # Just temporary and not meant to be an instance/class variable
@@ -177,23 +183,43 @@ class MOS6502:
         for code, op in instruction_gen:
             self._instructions[code] = op
 
+        # Build quick lookup table for addressing mode fetch/write functions
+        self._addressing_modes = [None] * 0x1F
+        for mode in (0x02, 0x09):
+            self._addressing_modes[mode] = self._immediate_mode_fetch_write_data    # Immediate
+            self._addressing_modes[0x10 | mode] = self._abs_y_mode_fetch_write_data # Absolute, Y
+
+        for mode in (0x0C, 0x0D, 0x0E):
+            self._addressing_modes[mode] = self._absolute_mode_fetch_write_data     # Absolute
+            self._addressing_modes[0x10 | mode] = self._abs_x_mode_fetch_write_data # Absolute, X
+
+        for mode in (0x04, 0x05, 0x06):
+            self._addressing_modes[mode] = self._zero_page_mode_fetch_write_data    # Zero Page
+            self._addressing_modes[0x10 | mode] = self._zp_x_mode_fetch_write_data  # Zero Page, X
+
+        self._addressing_modes[0x0A] = self._accumulator_mode_fetch_write_data    # Accumulator
+        self._addressing_modes[0x01] = self._ind_x_mode_fetch_write_data            # (Indirect, X)
+        self._addressing_modes[0x11] = self._ind_y_mode_fetch_write_data            # (Indirect), Y
 
     """
     #    
     #    PUBLIC FACING CONTROL FUNCTIONS
     #    
     """
-    def reset(self) -> None:
+    def reset(self, verbose: bool=True) -> None:
         """
         Run the processor through the reset sequence.
         """
         self._cycle_log = []
         self._write_buffer = []
         self._inst_break(brk_type=3)
+        disasm_string = self._get_disasm_str()
+        if not verbose:
+            self._cycle_log = [[disasm_string, len(self._cycle_log)]]
+            return
 
         # Ensure that all logs contain the Disassembled Code and append Status Register
         # to the last cycle log.
-        disasm_string = self._get_disasm_str()
         for log in self._cycle_log:
             log.append(disasm_string)
 
@@ -203,7 +229,7 @@ class MOS6502:
         # Append total number of cycles for current instruction to last micro-instruction log
         self._cycle_log[-1].append(len(self._cycle_log))
 
-    def step(self, skip_micro: bool=False) -> list:
+    def step(self, verbose: bool=True) -> list:
         """
         Step through clock cycles.
 
@@ -228,10 +254,14 @@ class MOS6502:
         # If no instruction output exists, obtain and execute the next instruction
         if not self._cycle_log:
             self._instructions[self._read_next_program_byte('Fetch OP CODE @ PC: ')]()
+            disasm_string = self._get_disasm_str()
+            if not verbose:
+                res = [disasm_string, len(self._cycle_log)]
+                self._cycle_log = []
+                return res
 
             # Ensure that all logs contain the Disassembled Code and append Status Register
             # to the last cycle log.
-            disasm_string = self._get_disasm_str()
             for log in self._cycle_log:
                 log.append(disasm_string)
 
@@ -241,13 +271,7 @@ class MOS6502:
             # Append total number of cycles for current instruction to last micro-instruction log
             self._cycle_log[-1].append(len(self._cycle_log))
 
-        if skip_micro:
-            result = self._cycle_log.pop()
-            self._cycle_log = []
-        else:
-            result = self._cycle_log.pop(0)
-
-        return result
+        return self._cycle_log.pop(0)
 
 
     """
@@ -256,67 +280,67 @@ class MOS6502:
     #    
     """
     def _get_carry_flag(self) -> int:
-        return self._registers['P'] & 1
+        return self._registers[P] & 1
 
     def _get_zero_flag(self) -> int:
-        return (self._registers['P'] >> 1) & 1
+        return (self._registers[P] >> 1) & 1
 
     def _get_irq_disable_flag(self) -> int:
-        return (self._registers['P'] >> 2) & 1
+        return (self._registers[P] >> 2) & 1
 
     def _get_decimal_mode(self) -> int:
-        return (self._registers['P'] >> 3) & 1
+        return (self._registers[P] >> 3) & 1
 
     def _get_break_flag(self) -> int:
-        return (self._registers['P'] >> 4) & 1
+        return (self._registers[P] >> 4) & 1
 
     def _get_overflow_flag(self) -> int:
-        return (self._registers['P'] >> 6) & 1
+        return (self._registers[P] >> 6) & 1
 
     def _get_negative_flag(self) -> int:
-        return (self._registers['P'] >> 7) & 1
+        return (self._registers[P] >> 7) & 1
 
     def _set_carry_flag(self, value: bool):
         if value:
-            self._registers['P'] |= 0b1
+            self._registers[P] |= 0b1
         else:
-            self._registers['P'] &= 0b11111110
+            self._registers[P] &= 0b11111110
 
     def _set_zero_flag(self, value: bool):
         if value:
-            self._registers['P'] |= 0b10
+            self._registers[P] |= 0b10
         else:
-            self._registers['P'] &= 0b11111101
+            self._registers[P] &= 0b11111101
 
     def _set_irq_disable_flag(self, value: bool):
         if value:
-            self._registers['P'] |= 0b100
+            self._registers[P] |= 0b100
         else:
-            self._registers['P'] &= 0b11111011
+            self._registers[P] &= 0b11111011
 
     def _set_decimal_mode(self, value: bool):
         if value:
-            self._registers['P'] |= 0b1000
+            self._registers[P] |= 0b1000
         else:
-            self._registers['P'] &= 0b11110111
+            self._registers[P] &= 0b11110111
 
     def _set_break_flag(self, value: bool):
         if value:
-            self._registers['P'] |= 0b10000
+            self._registers[P] |= 0b10000
         else:
-            self._registers['P'] &= 0b11101111
+            self._registers[P] &= 0b11101111
 
     def _set_overflow_flag(self, value: bool):
         if value:
-            self._registers['P'] |= 0b1000000
+            self._registers[P] |= 0b1000000
         else:
-            self._registers['P'] &= 0b10111111
+            self._registers[P] &= 0b10111111
 
     def _set_negative_flag(self, value: bool):
         if value:
-            self._registers['P'] |= 0b10000000
+            self._registers[P] |= 0b10000000
         else:
-            self._registers['P'] &= 0b01111111
+            self._registers[P] &= 0b01111111
 
 
 
@@ -360,10 +384,10 @@ class MOS6502:
     def _read_next_program_byte(self, micro_desc: str, advance: bool=True) -> int:
         # Advance is set false with Single Byte Instructions running for 2 clock cycles
 
-        self._current_address = (self._registers['PCH'] << 8) | self._registers['PCL']
+        self._current_address = (self._registers[PCH] << 8) | self._registers[PCL]
         address = self._current_address + advance
-        self._registers['PCL'] = address & 0xff
-        self._registers['PCH'] = (address & 0xff00) >> 8
+        self._registers[PCL] = address & 0xff
+        self._registers[PCH] = (address & 0xff00) >> 8
         return self._read_byte_from_current_address(micro_desc)
 
 
@@ -372,49 +396,13 @@ class MOS6502:
     #    DATA FETCH/WRITE FUNCTIONS FOR VARIOUS ADDRESSING MODE 
     #    
     """
-    _IMM_ABSY = (0x02, 0x09)
-    _ABS_ABSX = (0x0C, 0x0D, 0x0E)
-    _ZP_ZPX   = (0x04, 0x05, 0x06)
-    def _fetch_write_data(self, no_skip: bool=False) -> int:
-        mode_high = self._current_data & 0x10
-        mode_low = self._current_data & 0x0F
-
-        if mode_low in MOS6502._IMM_ABSY:
-            return (
-                self._abs_y_mode_fetch_write_data(no_skip) if mode_high # Absolute, Y
-                else self._immediate_mode_fetch_write_data()            # Immediate
-            )
-
-        if mode_low in MOS6502._ABS_ABSX:
-            return (
-                self._abs_x_mode_fetch_write_data(no_skip) if mode_high # Absolute, X
-                else self._absolute_mode_fetch_write_data()             # Absolute
-            )
-
-        if mode_low in MOS6502._ZP_ZPX:
-            return (
-                self._zp_x_mode_fetch_write_data() if mode_high         # Zero Page, X
-                else self._zero_page_mode_fetch_write_data()            # Zero Page
-            )
-
-        if mode_low == 0x0A:
-            return self._accumulator_mode_fetch_write_data()           # Accumulator
-
-        if mode_low == 0x01:
-            return (
-                self._ind_y_mode_fetch_write_data() if mode_high        # (Indirect), Y
-                else self._ind_x_mode_fetch_write_data()                # (Indirect, X)
-            )
-
-        return None
-
-    def _immediate_mode_fetch_write_data(self) -> int:
+    def _immediate_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('#')
         value = self._read_next_program_byte('Fetch DATA @ PC + 1')
         self._add_disasm_token(f'#${value:02X}')
         return value
 
-    def _absolute_mode_fetch_write_data(self) -> int:
+    def _absolute_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('a')
         low_byte = self._read_next_program_byte(
             'Fetch Effective Address low-byte (ADL) @ PC + 1'
@@ -430,7 +418,7 @@ class MOS6502:
 
         return self._read_byte_from_current_address('Fetch DATA @ (ADH, ADL)')
 
-    def _zero_page_mode_fetch_write_data(self) -> int:
+    def _zero_page_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('zp')
         low_byte = self._read_next_program_byte(
             'Fetch Zero-Page Effective Address (ADL) @ PC + 1'
@@ -443,19 +431,19 @@ class MOS6502:
 
         return self._read_byte_from_current_address('Fetch DATA @ (00, ADL)')
 
-    def _accumulator_mode_fetch_write_data(self) -> int:
+    def _accumulator_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('ACC')
         self._add_disasm_token('ACC')
-        return self._registers['ACC']
+        return self._registers[ACC]
 
-    def _zp_x_mode_fetch_write_data(self) -> int:
+    def _zp_x_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('zp,x')
         self._current_address = self._read_next_program_byte(
             'Fetch Zero-Page Base Address (BAL) @ PC + 1'
         )
         self._add_disasm_token(f'${self._current_address:02X},X')
         self._read_byte_from_current_address('Fetch DATA @ (00, BAL) [DISCARDED]')
-        self._current_address = (self._current_address + self._registers['X']) & 0xff
+        self._current_address = (self._current_address + self._registers[X]) & 0xff
         if self._write_buffer:
             self._current_data = self._write_buffer.pop()
             return self._write_byte_to_current_address('Write DATA @ (00, BAL + X)')
@@ -464,14 +452,14 @@ class MOS6502:
             'Fetch DATA @ (00, BAL + X)'
         )
 
-    def _zp_y_mode_fetch_write_data(self) -> int:
+    def _zp_y_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('zp,y')
         self._current_address = self._read_next_program_byte(
             'Fetch Zero-Page Base Address (BAL) @ PC + 1'
         )
         self._add_disasm_token(f'${self._current_address:02X},Y')
         self._read_byte_from_current_address('Fetch DATA @ (00, BAL) [DISCARDED]')
-        self._current_address = (self._current_address + self._registers['Y']) & 0xff
+        self._current_address = (self._current_address + self._registers[Y]) & 0xff
         if self._write_buffer:
             self._current_data = self._write_buffer.pop()
             return self._write_byte_to_current_address('Write DATA @ (00, BAL + Y)')
@@ -484,11 +472,11 @@ class MOS6502:
         self._append_to_first_micro_desc('a,x')
         low_byte = self._read_next_program_byte(
             'Fetch Base Address low-byte (BAL) @ PC + 1'
-        ) + self._registers['X']
+        ) + self._registers[X]
         high_byte = self._read_next_program_byte(
             'Fetch Base Address high-byte (BAH) @ PC + 2'
         )
-        self._add_disasm_token(f'${high_byte:02X}{low_byte-self._registers['X']:02X},X')
+        self._add_disasm_token(f'${high_byte:02X}{low_byte-self._registers[X]:02X},X')
         self._current_address = (high_byte << 8) | (low_byte & 0xff)
         value = self._read_byte_from_current_address(
             'Fetch DATA @ (BAH, BAL + X)'
@@ -511,11 +499,11 @@ class MOS6502:
         self._append_to_first_micro_desc('a,y')
         low_byte = self._read_next_program_byte(
             'Fetch Base Address low-byte (BAL) @ PC + 1'
-        ) + self._registers['X']
+        ) + self._registers[X]
         high_byte = self._read_next_program_byte(
             'Fetch Base Address high-byte (BAH) @ PC + 2'
         )
-        self._add_disasm_token(f'${high_byte:02X}{low_byte-self._registers['Y']:02X},Y')
+        self._add_disasm_token(f'${high_byte:02X}{low_byte-self._registers[Y]:02X},Y')
         self._current_address = (high_byte << 8) | (low_byte & 0xff)
         value = self._read_byte_from_current_address(
             'Fetch DATA @ (BAH, BAL + Y)'
@@ -534,14 +522,14 @@ class MOS6502:
 
         return value
 
-    def _ind_x_mode_fetch_write_data(self) -> int:
+    def _ind_x_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('(zp,x)')
         self._current_address = self._read_next_program_byte(
             'Fetch Zero-Page Base Address (BAL) @ PC + 1'
         )
         self._add_disasm_token(f'(${self._current_address:02X},X)')
         self._read_byte_from_current_address('Fetch DATA @ (00, BAL) [DISCARDED]')
-        self._current_address = (self._current_address + self._registers['X']) & 0xff
+        self._current_address = (self._current_address + self._registers[X]) & 0xff
         low_byte = self._read_byte_from_current_address(
             'Fetch Effective Address low-byte (ADL) @ (00, BAL + X)'
         )
@@ -556,7 +544,7 @@ class MOS6502:
 
         return self._read_byte_from_current_address('Fetch DATA @ (ADH, ADL)')
 
-    def _ind_y_mode_fetch_write_data(self) -> int:
+    def _ind_y_mode_fetch_write_data(self, _no_skip: bool=False) -> int:
         self._append_to_first_micro_desc('(zp),y')
         self._current_address = self._read_next_program_byte(
             'Fetch Zero-Page Inderect Address (IAL) @ PC + 1'
@@ -564,7 +552,7 @@ class MOS6502:
         self._add_disasm_token(f'(${self._current_address:02X}),Y')
         low_byte = self._read_byte_from_current_address(
             'Fetch Base Address low-byte (BAL) @ (00, IAL)'
-        ) + self._registers['Y']
+        ) + self._registers[Y]
         self._current_address = (self._current_address + 1) & 0xff
         high_byte = self._read_byte_from_current_address(
             'Fetch Base Address high-byte (BAH) @ (00, IAL + 1)'
@@ -603,18 +591,18 @@ class MOS6502:
         self._set_disasm_token(opcode)
         self._append_to_first_micro_desc(opcode + ' ')
 
-        value = self._fetch_write_data()
+        value = self._addressing_modes[self._current_data & 0x1F]()
 
         # Convert to 1's complement when subtracting
         value = (value ^ (0xff * subtract)) + self._get_carry_flag()
 
-        result = self._registers['ACC'] + value
+        result = self._registers[ACC] + value
 
         self._set_carry_flag(result >> 8)
         self._set_zero_flag(not result & 0xff)
-        self._set_overflow_flag((self._registers['ACC']^result) & (value^result) & 0x80)
+        self._set_overflow_flag((self._registers[ACC]^result) & (value^result) & 0x80)
         self._set_negative_flag(result & 0b10000000)
-        self._registers['ACC'] = result & 0xff
+        self._registers[ACC] = result & 0xff
 
     def _inst_bit_test(self) -> None:
         """
@@ -623,11 +611,11 @@ class MOS6502:
         self._append_to_first_micro_desc('BIT ')
         self._set_disasm_token('BIT')
 
-        value = self._fetch_write_data()
+        value = self._addressing_modes[self._current_data & 0x1F]()
 
         self._set_negative_flag(value >> 7)
         self._set_overflow_flag(value & 0b01000000)
-        self._set_zero_flag(not value & self._registers['ACC'])
+        self._set_zero_flag(not value & self._registers[ACC])
 
     _BRANCH_OP_CODES = ('BPL', 'BMI', 'BVC', 'BVS', '')
     _BRANCH_FLAG_BITS = (7, 6, 0, 1)
@@ -650,25 +638,25 @@ class MOS6502:
         offset = self._read_next_program_byte('Fetch Branch Offset @ PC + 1')
 
         flag_bit = MOS6502._BRANCH_FLAG_BITS[opcode_int >> 1]
-        flag_status = (self._registers['P'] >> flag_bit) & 1
+        flag_status = (self._registers[P] >> flag_bit) & 1
         branch_taken = not flag_status ^ (opcode_int & 1)
 
         if branch_taken:
             self._cycle_log[-1][0] += ' [BRANCH TO PC + 2 + Offset '
             relative_offset = (offset ^ 0x80) - 0x80 # Convert from unsigned byte to signed byte
-            pcl = self._registers['PCL']
-            self._registers['PCL'] = (pcl + offset) & 0xff
+            pcl = self._registers[PCL]
+            self._registers[PCL] = (pcl + offset) & 0xff
 
-            if pcl + relative_offset != self._registers['PCL']: # Page was crossed
+            if pcl + relative_offset != self._registers[PCL]: # Page was crossed
                 self._cycle_log[-1][0] += 'with Page-Cross]'
                 self._read_next_program_byte(
                     'Fetch OP CODE @ PC + 2 + Offset without Page-Cross [DISCARDED]',
                     advance=False
                 )
                 if relative_offset < 0:
-                    self._registers['PCH'] = (self._registers['PCH'] - 1) & 0xff
+                    self._registers[PCH] = (self._registers[PCH] - 1) & 0xff
                 else:
-                    self._registers['PCH'] = (self._registers['PCH'] + 1) & 0xff
+                    self._registers[PCH] = (self._registers[PCH] + 1) & 0xff
 
             else: # No page was crossed
                 self._cycle_log[-1][0] += 'without Page-Cross]'
@@ -697,15 +685,15 @@ class MOS6502:
         """
         self._set_disasm_token(MOS6502._BREAK_OP_CODES[brk_type][0])
 
-        old_p = self._registers['P']
-        self._registers['P'] = 0b00110100
+        old_p = self._registers[P]
+        self._registers[P] = 0b00110100
         int_vector = MOS6502._BREAK_OP_CODES[brk_type][1]
 
         if brk_type:
             self._set_break_flag(not brk_type ^ 3)
-            address = ((self._registers['PCH'] << 8) | self._registers['PCL']) - 1
-            self._registers['PCL'] = address & 0xff
-            self._registers['PCH'] = (address & 0xff00) >> 8
+            address = ((self._registers[PCH] << 8) | self._registers[PCL]) - 1
+            self._registers[PCL] = address & 0xff
+            self._registers[PCH] = (address & 0xff00) >> 8
             self._read_next_program_byte('Interrupted: ', advance=False)
             self._cycle_log[0][2] = 0 # Set DATA of first cycle to 0x00
             self._read_next_program_byte('Fetch DATA @ PC [DISCARDED]')
@@ -715,20 +703,20 @@ class MOS6502:
 
         self._append_to_first_micro_desc(MOS6502._BREAK_OP_CODES[brk_type][0])
 
-        self._current_address = 0x0100 | self._registers['S']
-        self._current_data = self._registers['PCH']
+        self._current_address = 0x0100 | self._registers[S]
+        self._current_data = self._registers[PCH]
         self._write_byte_to_current_address('Write PC high-byte to stack @ S')
-        self._registers['S'] = (self._registers['S'] - 1) & 0xff
+        self._registers[S] = (self._registers[S] - 1) & 0xff
 
-        self._current_address = 0x0100 | self._registers['S']
-        self._current_data = self._registers['PCL']
+        self._current_address = 0x0100 | self._registers[S]
+        self._current_data = self._registers[PCL]
         self._write_byte_to_current_address('Write PC low-byte to stack @ S - 1')
-        self._registers['S'] = (self._registers['S'] - 1) & 0xff
+        self._registers[S] = (self._registers[S] - 1) & 0xff
 
-        self._current_address = 0x0100 | self._registers['S']
+        self._current_address = 0x0100 | self._registers[S]
         self._current_data = old_p
         self._write_byte_to_current_address('Write P to stack @ S - 2')
-        self._registers['S'] = (self._registers['S'] - 1) & 0xff
+        self._registers[S] = (self._registers[S] - 1) & 0xff
 
         self._current_address = int_vector
         adl = self._read_byte_from_current_address(
@@ -739,8 +727,8 @@ class MOS6502:
             f'Fetch Interrup Vector high-byte (ADH) @ ${self._current_address:04X}'
         )
 
-        self._registers['PCL'] = adl
-        self._registers['PCH'] = adh
+        self._registers[PCL] = adl
+        self._registers[PCH] = adh
 
 
     def _inst_clear_set_flag(self) -> None:
@@ -778,9 +766,9 @@ class MOS6502:
         [CPY] Compare Memory and Index Y
         """
         opcode = (
-            ('CMP','ACC') if self._current_data & 1
-            else ('CPX','X') if self._current_data & 0b00100000
-            else ('CPY','Y')
+            ('CMP', ACC) if self._current_data & 1
+            else ('CPX', X) if self._current_data & 0b00100000
+            else ('CPY', Y)
         )
         self._set_disasm_token(opcode[0])
         self._append_to_first_micro_desc(opcode[0] + ' ')
@@ -791,7 +779,7 @@ class MOS6502:
         if not self._current_data & 0x0F:
             self._current_data += 2
 
-        value = self._fetch_write_data()
+        value = self._addressing_modes[self._current_data & 0x1F]()
 
         # Convert to 2's complement to subtract
         value = (value ^ 0xff) + 1
@@ -809,7 +797,7 @@ class MOS6502:
         [INX] Increment X by 1
         [INY] Increment Y by 1
         """
-        index = 'X' if self._current_data >= 0xCA else 'Y'
+        index = X if self._current_data >= 0xCA else Y
         inc = self._current_data in (0xE8, 0xC8)
         opcode = ('IN' if inc else 'DE') + index
         self._set_disasm_token(opcode)
@@ -831,8 +819,8 @@ class MOS6502:
             self._append_to_first_micro_desc('JMP a')
             adl = self._read_next_program_byte('Fetch Jump Address low-byte (ADL) @ PC + 1')
             adh = self._read_next_program_byte('Fetch Jump Address high-byte (ADH) @ PC + 2')
-            self._registers['PCL'] = adl
-            self._registers['PCH'] = adh
+            self._registers[PCL] = adl
+            self._registers[PCH] = adh
             self._add_disasm_token(f'${(adh << 8) | adl:04X}')
             return
 
@@ -854,8 +842,8 @@ class MOS6502:
             'Fetch Jump Address high-byte (ADH) @ (IAH, IAL + 1)'
         )
 
-        self._registers['PCL'] = adl
-        self._registers['PCH'] = adh
+        self._registers[PCL] = adl
+        self._registers[PCH] = adh
 
     def _inst_jump_to_subroutine(self) -> None:
         """
@@ -866,20 +854,20 @@ class MOS6502:
 
         adl = self._read_next_program_byte('Fetch Subroutine Address low-byte (ADL) @ PC + 1')
 
-        self._current_address = 0x0100 | self._registers['S']
+        self._current_address = 0x0100 | self._registers[S]
         self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
-        self._current_data = self._registers['PCH']
+        self._current_data = self._registers[PCH]
         self._write_byte_to_current_address('Write PC high-byte to stack @ S')
-        self._registers['S'] = (self._registers['S'] - 1) & 0xff
+        self._registers[S] = (self._registers[S] - 1) & 0xff
 
-        self._current_address = 0x0100 | self._registers['S']
-        self._current_data = self._registers['PCL']
+        self._current_address = 0x0100 | self._registers[S]
+        self._current_data = self._registers[PCL]
         self._write_byte_to_current_address('Write PC low-byte to stack @ S - 1')
-        self._registers['S'] = (self._registers['S'] - 1) & 0xff
+        self._registers[S] = (self._registers[S] - 1) & 0xff
 
         adh = self._read_next_program_byte('Fetch Subroutine Address high-byte (ADH) @ PC + 2')
-        self._registers['PCL'] = adl
-        self._registers['PCH'] = adh
+        self._registers[PCL] = adl
+        self._registers[PCH] = adh
 
         self._add_disasm_token(f'${(adh << 8) | adl:04X}')
 
@@ -891,9 +879,9 @@ class MOS6502:
         """
 
         opcode = (
-            ('LDA', 'ACC') if self._current_data & 1
-            else ('LDX', 'X') if self._current_data & 2
-            else ('LDY', 'Y')
+            ('LDA', ACC) if self._current_data & 1
+            else ('LDX', X) if self._current_data & 2
+            else ('LDY', Y)
         )
         self._set_disasm_token(opcode[0])
         self._append_to_first_micro_desc(opcode[0] + ' ')
@@ -907,7 +895,7 @@ class MOS6502:
         if self._current_data == 0xB6: # Handle special case of "LDX zp,y"
             value = self._zp_y_mode_fetch_write_data()
         else:
-            value = self._fetch_write_data()
+            value = self._addressing_modes[self._current_data & 0x1F]()
 
         self._registers[opcode[1]] = value
         self._set_negative_flag(value >> 7)
@@ -924,12 +912,12 @@ class MOS6502:
         self._set_disasm_token(opcode_str)
         self._append_to_first_micro_desc(opcode_str + ' ')
 
-        value = self._fetch_write_data()
+        value = self._addressing_modes[self._current_data & 0x1F]()
 
-        acc = self._registers['ACC']
+        acc = self._registers[ACC]
         result = (acc|value) if not opcode_int else (acc&value) if opcode_int == 2 else (acc^value)
 
-        self._registers['ACC'] = result
+        self._registers[ACC] = result
         self._set_negative_flag(result >> 7)
         self._set_zero_flag(not result)
 
@@ -959,26 +947,26 @@ class MOS6502:
         self._append_to_first_micro_desc(opcode_str)
 
         self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
-        self._current_address = 0x0100 | self._registers['S']
+        self._current_address = 0x0100 | self._registers[S]
 
         if read:
             self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
-            self._registers['S'] = (self._registers['S'] + 1) & 0xff
-            self._current_address = 0x0100 | self._registers['S']
+            self._registers[S] = (self._registers[S] + 1) & 0xff
+            self._current_address = 0x0100 | self._registers[S]
             self._registers[reg] = self._read_byte_from_current_address(
                 f'Fetch {reg} from stack @ S + 1'
             )
 
             if self._current_address >> 6: # Accumulator pulled
-                self._set_negative_flag(self._registers['ACC'] >> 7)
-                self._set_zero_flag(not self._registers['ACC'])
+                self._set_negative_flag(self._registers[ACC] >> 7)
+                self._set_zero_flag(not self._registers[ACC])
 
             else: # Processor Status Register pulled
-                self._registers['P'] &= 0b11001111 # Ignore BRK flag and Bit 5
+                self._registers[P] &= 0b11001111 # Ignore BRK flag and Bit 5
         else:
             self._current_data = self._registers[reg]
             self._write_byte_to_current_address(f'Write {reg} to stack @ S')
-            self._registers['S'] = (self._registers['S'] - 1) & 0xff
+            self._registers[S] = (self._registers[S] - 1) & 0xff
 
     _RETURN_OP_CODES = (None, None, 'RTI', 'RTS')
     def _inst_return(self) -> None:
@@ -991,38 +979,38 @@ class MOS6502:
         self._append_to_first_micro_desc(opcode_str)
 
         self._read_next_program_byte('Fetch DATA @ PC + 1 [DISCARDED]', advance=False)
-        self._current_address = 0x0100 | self._registers['S']
+        self._current_address = 0x0100 | self._registers[S]
         self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
 
-        self._registers['S'] = (self._registers['S'] + 1) & 0xff
-        self._current_address = 0x0100 | self._registers['S']
+        self._registers[S] = (self._registers[S] + 1) & 0xff
+        self._current_address = 0x0100 | self._registers[S]
 
         if self._current_data == 0x40: # Return from Interrupt
-            self._registers['P'] = self._read_byte_from_current_address(
+            self._registers[P] = self._read_byte_from_current_address(
                 'Fetch P from stack @ S + 1'
             ) & 0b11001111 # Ignore BRK flag and Bit 5
 
-            self._registers['S'] = (self._registers['S'] + 1) & 0xff
-            self._current_address = 0x0100 | self._registers['S']
-            self._registers['PCL'] = self._read_byte_from_current_address(
+            self._registers[S] = (self._registers[S] + 1) & 0xff
+            self._current_address = 0x0100 | self._registers[S]
+            self._registers[PCL] = self._read_byte_from_current_address(
                 'Fetch PCL from stack @ S + 2'
             )
 
-            self._registers['S'] = (self._registers['S'] + 1) & 0xff
-            self._current_address = 0x0100 | self._registers['S']
-            self._registers['PCH'] = self._read_byte_from_current_address(
+            self._registers[S] = (self._registers[S] + 1) & 0xff
+            self._current_address = 0x0100 | self._registers[S]
+            self._registers[PCH] = self._read_byte_from_current_address(
                 'Fetch PCH from stack @ S + 3'
             )
             return
 
         # Return from Subroutine
-        self._registers['PCL'] = self._read_byte_from_current_address(
+        self._registers[PCL] = self._read_byte_from_current_address(
             'Fetch PC low-byte from stack (PCL) @ S + 1'
         )
 
-        self._registers['S'] = (self._registers['S'] + 1) & 0xff
-        self._current_address = 0x0100 | self._registers['S']
-        self._registers['PCH'] = self._read_byte_from_current_address(
+        self._registers[S] = (self._registers[S] + 1) & 0xff
+        self._current_address = 0x0100 | self._registers[S]
+        self._registers[PCH] = self._read_byte_from_current_address(
             'Fetch PC high-byte from stack (PCH) @ S + 2'
         )
 
@@ -1042,10 +1030,10 @@ class MOS6502:
         opcode_str = MOS6502._READ_MOD_WRITE_OPS[opcode_int]
         self._set_disasm_token(opcode_str)
         self._append_to_first_micro_desc(opcode_str + ' ')
-        mode_low = self._current_data & 0x0f
+        mode = self._current_data & 0x1f
 
         # Retrieve value first
-        value = self._fetch_write_data(no_skip=True)
+        value = self._addressing_modes[mode](no_skip=True)
 
         # Change value and flags
         if opcode_int == 0: # ASL
@@ -1073,8 +1061,8 @@ class MOS6502:
         self._set_negative_flag(value >> 7)
 
         # Execute final steps for accumulator mode of address
-        if mode_low == 0x0A:
-            self._registers['ACC'] = value
+        if mode == 0x0A:
+            self._registers[ACC] = value
             self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
             return
 
@@ -1091,9 +1079,9 @@ class MOS6502:
         [STY] Store Index Y in Memory
         """
         opcode = (
-            ('STA', 'ACC') if self._current_data & 1
-            else ('STX', 'X') if self._current_data & 2
-            else ('STY', 'Y')
+            ('STA', ACC) if self._current_data & 1
+            else ('STX', X) if self._current_data & 2
+            else ('STY', Y)
         )
         self._set_disasm_token(opcode[0])
         self._append_to_first_micro_desc(opcode[0] + ' ')
@@ -1103,7 +1091,7 @@ class MOS6502:
         if self._current_data == 0x96: # Handle special case of "STX zp,y"
             self._zp_y_mode_fetch_write_data()
         else:
-            self._fetch_write_data()
+            self._addressing_modes[self._current_data & 0x1F]()
 
     def _inst_transfer(self) -> None:
         """
