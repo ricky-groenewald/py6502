@@ -188,6 +188,15 @@ class MOS6502:
         self._write_buffer = []
         self._inst_break(brk_type=3)
 
+        # Ensure that all logs contain the Disassembled Code and append Status Register
+        # to the last cycle log.
+        disasm_string = self._get_disasm_str()
+        for log in self._cycle_log:
+            log.append(disasm_string)
+
+        # Append final registers to last micro-instruction log
+        self._cycle_log[-1].append(self._registers.copy())
+
     def step(self, skip_micro: bool=False) -> list:
         """
         Step through clock cycles.
@@ -678,9 +687,6 @@ class MOS6502:
         """
         self._set_disasm_token(MOS6502._BREAK_OP_CODES[brk_type][0])
 
-        if not brk_type: # Only [BRK] had OP CODE fetched
-            self._append_to_first_micro_desc(MOS6502._BREAK_OP_CODES[brk_type][0])
-
         old_p = self._registers['P']
         self._registers['P'] = 0b00110100
         int_vector = MOS6502._BREAK_OP_CODES[brk_type][1]
@@ -690,10 +696,14 @@ class MOS6502:
             address = ((self._registers['PCH'] << 8) | self._registers['PCL']) - 1
             self._registers['PCL'] = address & 0xff
             self._registers['PCH'] = (address & 0xff00) >> 8
+            self._read_next_program_byte('Interrupted: ', advance=False)
+            self._cycle_log[0][2] = 0 # Set DATA of first cycle to 0x00
             self._read_next_program_byte('Fetch DATA @ PC [DISCARDED]')
         else:
             self._set_break_flag(1)
             self._read_next_program_byte('Fetch DATA @ PC + 1 [DISCARDED]')
+
+        self._append_to_first_micro_desc(MOS6502._BREAK_OP_CODES[brk_type][0])
 
         self._current_address = 0x10 | self._registers['S']
         self._current_data = self._registers['PCH']
