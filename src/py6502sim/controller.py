@@ -1,7 +1,7 @@
 """
 Simulator definitions and functions for a component controller
 """
-from py6502sim import Component
+from py6502sim.component import Component
 
 class ComponentSizeError(Exception):
     """
@@ -70,7 +70,7 @@ class Controller(Component):
 
         for component in self._components:
             if component[1] <= address <= component[2]:
-                return component.execute(address - component[1], data, read_write_bar)
+                return component[0].execute(address - component[1], data, read_write_bar)
 
         raise UnallocatedAddressError(
             f'[{self._name}] Address not allocated to a component: 0x{address:04X}'
@@ -78,5 +78,5 @@ class Controller(Component):
 
     def _detail_str_output(self) -> str:
         return 'Component list:\n' + '\n'.join(
-            [f'{c[0]} [0x{c[1]:04X} - 0x{c[2]:04X}]' for c in self._components]
+            [f'{c[0].get_name()} [0x{c[1]:04X} - 0x{c[2]:04X}]' for c in self._components]
         )

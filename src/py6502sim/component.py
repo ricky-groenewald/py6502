@@ -94,7 +94,7 @@ class Component:
     def __str__(self) -> str:
         str_output = (
             f'Component name: {self._name}\n'
-            f'Component type: {type(self).__name__}'
+            f'Component type: {type(self).__name__}\n'
             f'Internal address range: 0x0000 - 0x{self._max_address:04X}\n'
             f'{self._detail_str_output()}'
         )

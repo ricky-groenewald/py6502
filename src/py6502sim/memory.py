@@ -1,7 +1,9 @@
 """
 Simulator definitions and functions for a memory component
 """
-from py6502sim import Component
+from py6502sim.component import Component
+
+# TODO: Print specific address ranges
 
 class WritingToReadOnly(Exception):
     """

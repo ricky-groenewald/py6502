@@ -1,7 +1,7 @@
 """
 Simulator definitions and functions for the main 6502 micro processor
 """
-from py6502sim import Component
+from py6502sim.component import Component
 
 # TODO:
 #   * [IMPLEMENTATION] Implement Decimal Mode in ADC and SBC
@@ -592,7 +592,7 @@ class MOS6502:
         result = self._registers['ACC'] + value
 
         self._set_carry_flag(result >> 8)
-        self._set_zero_flag(result & 0xff)
+        self._set_zero_flag(not result & 0xff)
         self._set_overflow_flag((self._registers['ACC']^result) & (value^result) & 0x80)
         self._set_negative_flag(result & 0b10000000)
         self._registers['ACC'] = result & 0xff
@@ -608,7 +608,7 @@ class MOS6502:
 
         self._set_negative_flag(value >> 7)
         self._set_overflow_flag(value & 0b01000000)
-        self._set_zero_flag(value & self._registers['ACC'])
+        self._set_zero_flag(not value & self._registers['ACC'])
 
     _BRANCH_OP_CODES = ('BPL', 'BMI', 'BVC', 'BVS', '')
     _BRANCH_FLAG_BITS = (7, 6, 0, 1)
@@ -677,13 +677,16 @@ class MOS6502:
             3: RES
         """
         self._set_disasm_token(MOS6502._BREAK_OP_CODES[brk_type][0])
-        self._append_to_first_micro_desc(MOS6502._BREAK_OP_CODES[brk_type][0])
+
+        if not brk_type: # Only [BRK] had OP CODE fetched
+            self._append_to_first_micro_desc(MOS6502._BREAK_OP_CODES[brk_type][0])
+
         old_p = self._registers['P']
         self._registers['P'] = 0b00110100
         int_vector = MOS6502._BREAK_OP_CODES[brk_type][1]
 
         if brk_type:
-            self._set_break_flag(0)
+            self._set_break_flag(not brk_type ^ 3)
             address = ((self._registers['PCH'] << 8) | self._registers['PCL']) - 1
             self._registers['PCL'] = address & 0xff
             self._registers['PCH'] = (address & 0xff00) >> 8
@@ -776,7 +779,7 @@ class MOS6502:
         result = self._registers[opcode[1]] + value
 
         self._set_negative_flag(result & 0b10000000)
-        self._set_zero_flag(result & 0xff)
+        self._set_zero_flag(not result & 0xff)
         self._set_carry_flag(result >> 8)
 
     def _inst_inc_dec_xy(self) -> None:
@@ -793,7 +796,7 @@ class MOS6502:
 
         self._registers[index] += 2 * inc - 1
         self._registers[index] &= 0xff
-        self._set_zero_flag(self._registers[index])
+        self._set_zero_flag(not self._registers[index])
         self._set_negative_flag(self._registers[index] >> 7)
         self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
         self._append_to_first_micro_desc(opcode)
@@ -877,7 +880,7 @@ class MOS6502:
 
         self._registers[opcode[1]] = value
         self._set_negative_flag(value >> 7)
-        self._set_zero_flag(value)
+        self._set_zero_flag(not value)
 
     def _inst_logic(self) -> None:
         """
@@ -897,7 +900,7 @@ class MOS6502:
 
         self._registers['ACC'] = result
         self._set_negative_flag(result >> 7)
-        self._set_zero_flag(result)
+        self._set_zero_flag(not result)
 
     def _inst_nop(self) -> None:
         """
@@ -937,7 +940,7 @@ class MOS6502:
 
             if self._current_address >> 6: # Accumulator pulled
                 self._set_negative_flag(self._registers['ACC'] >> 7)
-                self._set_zero_flag(self._registers['ACC'])
+                self._set_zero_flag(not self._registers['ACC'])
 
             else: # Processor Status Register pulled
                 self._registers['P'] &= 0b11001111 # Ignore BRK flag and Bit 5
@@ -1035,7 +1038,7 @@ class MOS6502:
             value += 1
             value &= 0xff
 
-        self._set_zero_flag(value)
+        self._set_zero_flag(not value)
         self._set_negative_flag(value >> 7)
 
         # Execute final steps for accumulator mode of address
@@ -1096,5 +1099,5 @@ class MOS6502:
         self._registers[dst] = self._registers[src]
         if self._current_data != 0x9A:
             self._set_negative_flag(self._registers[dst] >> 7)
-            self._set_zero_flag(self._registers[dst])
+            self._set_zero_flag(not self._registers[dst])
         self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
