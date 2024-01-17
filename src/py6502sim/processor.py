@@ -9,6 +9,8 @@ from py6502sim.component import Component
 #                    want users to be exposed to too many weird variables on importing a class
 #   * [OPTIMIZATION] Convert registers from dict -> array
 #   * [OPTIMIZATION] Put data fetch/write addressing modes in array instead of if/else switch case
+#   * [OPTIMIZATION] Include a "QUIET" mode that doesn't log cycles
+#   * [OPTIMIZATION] Move stack PUSH/PULL commands to separate function?
 
 
 class MOS6502:
@@ -32,6 +34,7 @@ class MOS6502:
         #     read / write,
         #     disassembled code as a string,
         #     registers dictionary (LAST MICRO-INSTRUCTIONS ONLY)
+        #     clock cycles to complete instruction (LAST MICRO-INSTRUCTIONS ONLY)
         # )
         self._cycle_log: list[list] = []
 
@@ -197,6 +200,9 @@ class MOS6502:
         # Append final registers to last micro-instruction log
         self._cycle_log[-1].append(self._registers.copy())
 
+        # Append total number of cycles for current instruction to last micro-instruction log
+        self._cycle_log[-1].append(len(self._cycle_log))
+
     def step(self, skip_micro: bool=False) -> list:
         """
         Step through clock cycles.
@@ -217,6 +223,7 @@ class MOS6502:
                 - Read / Write
                 - Disassembled code as a string
                 - Registers dictionary (Last micro-instructions only)
+                - Number of clock cycles to complete instruction (Last micro-instructions only)
         """
         # If no instruction output exists, obtain and execute the next instruction
         if not self._cycle_log:
@@ -230,6 +237,9 @@ class MOS6502:
 
             # Append final registers to last micro-instruction log
             self._cycle_log[-1].append(self._registers.copy())
+
+            # Append total number of cycles for current instruction to last micro-instruction log
+            self._cycle_log[-1].append(len(self._cycle_log))
 
         if skip_micro:
             result = self._cycle_log.pop()
@@ -705,17 +715,17 @@ class MOS6502:
 
         self._append_to_first_micro_desc(MOS6502._BREAK_OP_CODES[brk_type][0])
 
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._current_data = self._registers['PCH']
         self._write_byte_to_current_address('Write PC high-byte to stack @ S')
         self._registers['S'] = (self._registers['S'] - 1) & 0xff
 
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._current_data = self._registers['PCL']
         self._write_byte_to_current_address('Write PC low-byte to stack @ S - 1')
         self._registers['S'] = (self._registers['S'] - 1) & 0xff
 
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._current_data = old_p
         self._write_byte_to_current_address('Write P to stack @ S - 2')
         self._registers['S'] = (self._registers['S'] - 1) & 0xff
@@ -831,8 +841,19 @@ class MOS6502:
         ial = self._read_next_program_byte('Fetch Indirect Address low-byte (IAL) @ PC + 1')
         iah = self._read_next_program_byte('Fetch Indirect Address high-byte (IAH) @ PC + 2')
         self._add_disasm_token(f'(${(iah << 8) | ial:04X})')
-        adl = self._read_next_program_byte('Fetch Jump Address low-byte (ADL) @ (IAH, IAL)')
-        adh = self._read_next_program_byte('Fetch Jump Address high-byte (ADH) @ (IAH, IAL + 1)')
+
+        self._current_address = (iah << 8) | ial
+        adl = self._read_byte_from_current_address(
+            'Fetch Jump Address low-byte (ADL) @ (IAH, IAL)'
+        )
+
+        # This looks like a bug because of no carry over, but this is how the original 6502
+        # was implemented.
+        self._current_address = (iah << 8) | ((ial + 1) & 0xff)
+        adh = self._read_byte_from_current_address(
+            'Fetch Jump Address high-byte (ADH) @ (IAH, IAL + 1)'
+        )
+
         self._registers['PCL'] = adl
         self._registers['PCH'] = adh
 
@@ -845,13 +866,13 @@ class MOS6502:
 
         adl = self._read_next_program_byte('Fetch Subroutine Address low-byte (ADL) @ PC + 1')
 
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
         self._current_data = self._registers['PCH']
         self._write_byte_to_current_address('Write PC high-byte to stack @ S')
         self._registers['S'] = (self._registers['S'] - 1) & 0xff
 
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._current_data = self._registers['PCL']
         self._write_byte_to_current_address('Write PC low-byte to stack @ S - 1')
         self._registers['S'] = (self._registers['S'] - 1) & 0xff
@@ -938,12 +959,12 @@ class MOS6502:
         self._append_to_first_micro_desc(opcode_str)
 
         self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
 
         if read:
             self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
             self._registers['S'] = (self._registers['S'] + 1) & 0xff
-            self._current_address = 0x10 | self._registers['S']
+            self._current_address = 0x0100 | self._registers['S']
             self._registers[reg] = self._read_byte_from_current_address(
                 f'Fetch {reg} from stack @ S + 1'
             )
@@ -970,11 +991,11 @@ class MOS6502:
         self._append_to_first_micro_desc(opcode_str)
 
         self._read_next_program_byte('Fetch DATA @ PC + 1 [DISCARDED]', advance=False)
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
 
         self._registers['S'] = (self._registers['S'] + 1) & 0xff
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
 
         if self._current_data == 0x40: # Return from Interrupt
             self._registers['P'] = self._read_byte_from_current_address(
@@ -982,13 +1003,13 @@ class MOS6502:
             ) & 0b11001111 # Ignore BRK flag and Bit 5
 
             self._registers['S'] = (self._registers['S'] + 1) & 0xff
-            self._current_address = 0x10 | self._registers['S']
+            self._current_address = 0x0100 | self._registers['S']
             self._registers['PCL'] = self._read_byte_from_current_address(
                 'Fetch PCL from stack @ S + 2'
             )
 
             self._registers['S'] = (self._registers['S'] + 1) & 0xff
-            self._current_address = 0x10 | self._registers['S']
+            self._current_address = 0x0100 | self._registers['S']
             self._registers['PCH'] = self._read_byte_from_current_address(
                 'Fetch PCH from stack @ S + 3'
             )
@@ -1000,7 +1021,7 @@ class MOS6502:
         )
 
         self._registers['S'] = (self._registers['S'] + 1) & 0xff
-        self._current_address = 0x10 | self._registers['S']
+        self._current_address = 0x0100 | self._registers['S']
         self._registers['PCH'] = self._read_byte_from_current_address(
             'Fetch PC high-byte from stack (PCH) @ S + 2'
         )
