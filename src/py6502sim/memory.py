@@ -24,10 +24,10 @@ class Memory(Component):
         self._data = [0] * (self._max_address + 1) # Size starts count at 1, not 0
         self._read_only = read_only
 
-    def _read(self, address: int) -> int:
+    def read(self, address: int) -> int:
         return self._data[address]
 
-    def _write(self, address: int, data: int):
+    def write(self, address: int, data: int):
         if not self._read_only:
             self._data[address] = data
             return self._data[address]

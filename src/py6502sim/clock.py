@@ -1,5 +1,7 @@
 """
 Simulator definitions and functions for a timing clock
+
+Only accurate for low frequencies. ~10kHz
 """
 import time
 
@@ -16,7 +18,8 @@ class Clock:
         """
         Function that returns only on the next clock pulse
         """
-        dt = time.perf_counter() - self.last_timestamp
-        if dt < self.period:
-            time.sleep(self.period - dt)
+        next_time = self.last_timestamp + self.period
+        dt = time.perf_counter()
+        while dt < next_time:
+            dt = time.perf_counter()
         self.last_timestamp = time.perf_counter()

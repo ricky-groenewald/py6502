@@ -49,13 +49,14 @@ class Component:
         """
         return self._max_address
 
-    def _address_and_data_check(self, address: int, data: int) -> None:
+    def _address_check(self, address: int) -> None:
         if not 0x0000 <= address <= self._max_address:
             raise AddressOutOfRange(
                 f'[{self._name}] Invalid address accessed: 0x{address:04X}.'
                 f' Max address is: 0x{self._max_address:04X}.'
             )
 
+    def _data_check(self, data: int) -> None:
         if not 0x00 <= data <= 0xff:
             raise InvalidData(f'[{self._name}] Invalid byte value obtained: 0x{data:02X}')
 
@@ -72,17 +73,37 @@ class Component:
         Returns:
             int: Byte value of the data bus after the instruction
         """
-        self._address_and_data_check(address, data)
+        self._address_check(address)
+        self._data_check(data)
 
-        return self._read(address) if read_write_bar else self._write(address, data)
+        return self.read(address) if read_write_bar else self.write(address, data)
 
-    def _read(self, _address: int) -> int:
+    def read(self, _address: int) -> int:
+        """
+        Read data from an address
+
+        Arguments:
+            address (int): 16-bit value of the address bus
+
+        Returns:
+            int: Byte value of the data bus after the instruction
+        """
         # Process address read here
 
         # Base class always returns 0
         return 0
 
-    def _write(self, _address: int, data: int) -> int:
+    def write(self, _address: int, data: int) -> int:
+        """
+        Write data to an address
+
+        Arguments:
+            address (int): 16-bit value of the address bus
+            data (int): 8-bit value of the data bus
+
+        Returns:
+            int: Byte value of the data bus after the instruction
+        """
         # Process data write to address here
 
         # Base class simply echoes data

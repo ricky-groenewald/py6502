@@ -1,7 +1,7 @@
 """
 Simulator definitions and functions for a component controller
 """
-from py6502sim.component import Component
+from py6502sim.component import Component, InvalidData
 
 class ComponentSizeError(Exception):
     """
@@ -29,7 +29,8 @@ class Controller(Component):
     """
     def __init__(self, controller_name: str) -> None:
         super().__init__(0xffff, controller_name)
-        self._components: list[(Component, int, int)] = []
+        self._components: list[tuple[Component, int, int]] = []
+        self._component_address_map: list[tuple[Component, int]] = [None] * 0x10000
 
     def add_component(self, component: Component, address_start: int) -> None:
         """
@@ -65,16 +66,27 @@ class Controller(Component):
         self._components.append((component, address_start, address_end))
         self._components.sort(key=lambda x: x[1])
 
+        for i in range(component.get_max_address() + 1):
+            self._component_address_map[address_start+i] = (component, i)
+
     def execute(self, address: int, data: int, read_write_bar: bool) -> int:
-        self._address_and_data_check(address, data)
 
-        for component in self._components:
-            if component[1] <= address <= component[2]:
-                return component[0].execute(address - component[1], data, read_write_bar)
+        # SPEED UP
+        # Only do data checking since address checking is implicitly done through the address map
+        # Also faster to reimplement the check here.
+        if not 0x00 <= data <= 0xff:
+            raise InvalidData(f'[{self._name}] Invalid byte value obtained: 0x{data:02X}')
 
-        raise UnallocatedAddressError(
-            f'[{self._name}] Address not allocated to a component: 0x{address:04X}'
-        )
+        try:
+            component, comp_addr = self._component_address_map[address]
+            return (
+                component.read(comp_addr) if read_write_bar
+                else component.write(comp_addr, data)
+            )
+        except TypeError as exc:
+            raise UnallocatedAddressError(
+                f'[{self._name}] Address not allocated to a component: 0x{address:04X}'
+            ) from exc
 
     def _detail_str_output(self) -> str:
         return 'Component list:\n' + '\n'.join(
