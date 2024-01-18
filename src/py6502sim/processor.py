@@ -617,7 +617,7 @@ class MOS6502:
         self._set_overflow_flag(value & 0b01000000)
         self._set_zero_flag(not value & self._registers[ACC])
 
-    _BRANCH_OP_CODES = ('BPL', 'BMI', 'BVC', 'BVS', '')
+    _BRANCH_OP_CODES = ('BPL', 'BMI', 'BVC', 'BVS', 'BCC', 'BCS', 'BNE', 'BEQ')
     _BRANCH_FLAG_BITS = (7, 6, 0, 1)
     def _inst_branch(self) -> None:
         """
@@ -799,7 +799,7 @@ class MOS6502:
         """
         index = X if self._current_data >= 0xCA else Y
         inc = self._current_data in (0xE8, 0xC8)
-        opcode = ('IN' if inc else 'DE') + index
+        opcode = ('IN' if inc else 'DE') + [None, 'X', 'Y'][index]
         self._set_disasm_token(opcode)
 
         self._registers[index] += 2 * inc - 1
@@ -1033,7 +1033,7 @@ class MOS6502:
         mode = self._current_data & 0x1f
 
         # Retrieve value first
-        value = self._addressing_modes[mode](no_skip=True)
+        value = self._addressing_modes[mode](True)
 
         # Change value and flags
         if opcode_int == 0: # ASL
@@ -1103,20 +1103,19 @@ class MOS6502:
         [TYA] Transfer Index Y to Accumulator
         """
         opcode = {
-            0xAA: 'TAX',
-            0xA8: 'TAY',
-            0xBA: 'TSX',
-            0x8A: 'TXA',
-            0x9A: 'TXS',
-            0x98: 'TYA',
+            0xAA: ('TAX', ACC, X),
+            0xA8: ('TAY', ACC, Y),
+            0xBA: ('TSX', S, X),
+            0x8A: ('TXA', X, ACC),
+            0x9A: ('TXS', X, S),
+            0x98: ('TYA', Y, ACC),
         }[self._current_data]
 
-        self._append_to_first_micro_desc(opcode)
-        self._set_disasm_token(opcode)
-        src, dst = ('ACC' if s == 'A' else s for s in opcode[1:])
+        self._append_to_first_micro_desc(opcode[0])
+        self._set_disasm_token(opcode[0])
 
-        self._registers[dst] = self._registers[src]
+        self._registers[opcode[2]] = self._registers[opcode[1]]
         if self._current_data != 0x9A:
-            self._set_negative_flag(self._registers[dst] >> 7)
-            self._set_zero_flag(not self._registers[dst])
+            self._set_negative_flag(self._registers[opcode[1]] >> 7)
+            self._set_zero_flag(not self._registers[opcode[1]])
         self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
