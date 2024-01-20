@@ -6,7 +6,9 @@ from py6502sim.component import Component
 # TODO:
 #   * [IMPLEMENTATION] Implement Decimal Mode in ADC and SBC
 #   * [OPTIMIZATION] Move constants to separate file/class ?? Do I need to? Yes, because I don't
-#                    want users to be exposed to too many weird variables on importing a class
+#                    want users to be exposed to too many weird variables on importing a class.
+#                    Also, move ALL micro-op strings to the constants as well.
+#                    (yes, that includes all 151 mnemonic/addressing combinations)
 #   * [OPTIMIZATION] Move stack PUSH/PULL commands to separate function?
 #   * [OPTIMIZATION] Better solution than "no_skip"?
 
@@ -57,7 +59,7 @@ class MOS6502:
             # stack. I.e. S always points to addresses in the range 0x0100 ~ 0x01FF. Our
             # implementation will treat S as 8-bit, and assume it is always offset to 0x01XX.
 
-            0, # Processor Status Register P
+            0b00110100, # Processor Status Register P
             # Processor Status Register P is an 8-bit register that contains various flags:
             # Bit 0 - Carry (C)
             # Bit 1 - Zero (Z)
@@ -499,7 +501,7 @@ class MOS6502:
         self._append_to_first_micro_desc('a,y')
         low_byte = self._read_next_program_byte(
             'Fetch Base Address low-byte (BAL) @ PC + 1'
-        ) + self._registers[X]
+        ) + self._registers[Y]
         high_byte = self._read_next_program_byte(
             'Fetch Base Address high-byte (BAH) @ PC + 2'
         )
@@ -593,16 +595,28 @@ class MOS6502:
 
         value = self._addressing_modes[self._current_data & 0x1F]()
 
-        # Convert to 1's complement when subtracting
-        value = (value ^ (0xff * subtract)) + self._get_carry_flag()
+        if self._get_decimal_mode():
+            acc_val = (self._registers[ACC] >> 4) * 10 + (self._registers[ACC] & 0x0f)
+            value = (1 - 2 * subtract) * ((value >> 4) * 10 + (value & 0x0f)) - subtract
+            result = acc_val + value + self._get_carry_flag()
+            self._set_carry_flag(result >= 0 if subtract else result >= 100)
+            self._set_zero_flag(not result)
+            self._set_overflow_flag(result < -20 or result > 79)
+            if result < 0:
+                result = (result + 300) % 100
 
-        result = self._registers[ACC] + value
+            self._registers[ACC] = ((result % 100 // 10) << 4 ) + result % 10
+        else:
+            # Convert to signed numbers
+            value ^= (0xff * subtract)
+            result = self._registers[ACC] + value + self._get_carry_flag()
+            self._set_carry_flag(result >> 8)
+            result &= 0xff
+            self._set_zero_flag(not result)
+            self._set_overflow_flag((self._registers[ACC]^result) & (value^result) & 0x80)
+            self._registers[ACC] = result
 
-        self._set_carry_flag(result >> 8)
-        self._set_zero_flag(not result & 0xff)
-        self._set_overflow_flag((self._registers[ACC]^result) & (value^result) & 0x80)
-        self._set_negative_flag(result & 0b10000000)
-        self._registers[ACC] = result & 0xff
+        self._set_negative_flag(self._registers[ACC] & 0b10000000)
 
     def _inst_bit_test(self) -> None:
         """
@@ -642,27 +656,26 @@ class MOS6502:
         branch_taken = not flag_status ^ (opcode_int & 1)
 
         if branch_taken:
-            self._cycle_log[-1][0] += ' [BRANCH TO PC + 2 + Offset '
             relative_offset = (offset ^ 0x80) - 0x80 # Convert from unsigned byte to signed byte
             pcl = self._registers[PCL]
             self._registers[PCL] = (pcl + offset) & 0xff
+            self._read_next_program_byte(
+                'Fetch OP CODE @ PC + 2 + Offset w/o carry [DISCARDED]',
+                advance=False
+            )
 
             if pcl + relative_offset != self._registers[PCL]: # Page was crossed
-                self._cycle_log[-1][0] += 'with Page-Cross]'
-                self._read_next_program_byte(
-                    'Fetch OP CODE @ PC + 2 + Offset without Page-Cross [DISCARDED]',
-                    advance=False
-                )
                 if relative_offset < 0:
                     self._registers[PCH] = (self._registers[PCH] - 1) & 0xff
                 else:
                     self._registers[PCH] = (self._registers[PCH] + 1) & 0xff
-
-            else: # No page was crossed
-                self._cycle_log[-1][0] += 'without Page-Cross]'
+                self._read_next_program_byte(
+                    'Fetch OP CODE @ PC + 2 + Offset with carry [DISCARDED]',
+                    advance=False
+                )
 
         else:
-            self._cycle_log[-1][0] += ' [BRANCH IGNORED]'
+            self._cycle_log[-1][0] += ' [BRANCH NOT TAKEN]'
 
     _BREAK_OP_CODES = (
         ('BRK', 0xFFFE),
@@ -686,7 +699,7 @@ class MOS6502:
         self._set_disasm_token(MOS6502._BREAK_OP_CODES[brk_type][0])
 
         old_p = self._registers[P]
-        self._registers[P] = 0b00110100
+        self._registers[P] |= 0b00110100
         int_vector = MOS6502._BREAK_OP_CODES[brk_type][1]
 
         if brk_type:
@@ -894,6 +907,8 @@ class MOS6502:
 
         if self._current_data == 0xB6: # Handle special case of "LDX zp,y"
             value = self._zp_y_mode_fetch_write_data()
+        elif self._current_data == 0xBE: # Handle special case of "LDX a,y"
+            value = self._abs_y_mode_fetch_write_data()
         else:
             value = self._addressing_modes[self._current_data & 0x1F]()
 
@@ -907,15 +922,15 @@ class MOS6502:
         [EOR] "XOR" Memory with Accumulator
         [ORA] "OR" Memory with Accumulator
         """
-        opcode_int = (self._current_data >> 8) & 0b110
-        opcode_str = 'ORA' if not opcode_int else 'AND' if opcode_int == 2 else 'XOR'
+        opcode_int = (self._current_data >> 5)
+        opcode_str = 'ORA' if not opcode_int else 'AND' if opcode_int == 1 else 'EOR'
         self._set_disasm_token(opcode_str)
         self._append_to_first_micro_desc(opcode_str + ' ')
 
         value = self._addressing_modes[self._current_data & 0x1F]()
 
         acc = self._registers[ACC]
-        result = (acc|value) if not opcode_int else (acc&value) if opcode_int == 2 else (acc^value)
+        result = (acc|value) if not opcode_int else (acc&value) if opcode_int == 1 else (acc^value)
 
         self._registers[ACC] = result
         self._set_negative_flag(result >> 7)
@@ -930,10 +945,10 @@ class MOS6502:
         self._read_next_program_byte('Fetch OP CODE @ PC + 1 [DISCARDED]', advance=False)
 
     _PUSH_PULL_OP_CODES = (
-        ('P', 0, 'PHP'),
-        ('P', 1, 'PLP'),
-        ('ACC', 0, 'PHA'),
-        ('ACC', 1, 'PLA'),
+        (P, 0, 'PHP'),
+        (P, 1, 'PLP'),
+        (ACC, 0, 'PHA'),
+        (ACC, 1, 'PLA'),
     )
     def _inst_push_pull_stack(self) -> None:
         """
@@ -950,6 +965,9 @@ class MOS6502:
         self._current_address = 0x0100 | self._registers[S]
 
         if read:
+            # Remember current state of Bits 4 and 5 in case of PLP
+            bits45 = self._registers[P] & 0b00110000
+
             self._read_byte_from_current_address('Fetch DATA from stack @ S [DISCARDED]')
             self._registers[S] = (self._registers[S] + 1) & 0xff
             self._current_address = 0x0100 | self._registers[S]
@@ -957,15 +975,19 @@ class MOS6502:
                 f'Fetch {reg} from stack @ S + 1'
             )
 
-            if self._current_address >> 6: # Accumulator pulled
+            if not reg: # Accumulator pulled
                 self._set_negative_flag(self._registers[ACC] >> 7)
                 self._set_zero_flag(not self._registers[ACC])
 
             else: # Processor Status Register pulled
-                self._registers[P] &= 0b11001111 # Ignore BRK flag and Bit 5
+                # Restore P, but leave bits 4 and 5 unchanged
+                self._registers[P] &= 0b11001111
+                self._registers[P] |= bits45
         else:
             self._current_data = self._registers[reg]
-            self._write_byte_to_current_address(f'Write {reg} to stack @ S')
+            self._write_byte_to_current_address(
+                f'Write {opcode_str[-1] if reg else "ACC"} to stack @ S'
+            )
             self._registers[S] = (self._registers[S] - 1) & 0xff
 
     _RETURN_OP_CODES = (None, None, 'RTI', 'RTS')
@@ -974,7 +996,8 @@ class MOS6502:
         [RTI] Return from Interrupt
         [RTS] Return from Subroutine
         """
-        opcode_str = MOS6502._RETURN_OP_CODES[self._current_data >> 5]
+        opcode_int = self._current_data >> 5
+        opcode_str = MOS6502._RETURN_OP_CODES[opcode_int]
         self._set_disasm_token(opcode_str)
         self._append_to_first_micro_desc(opcode_str)
 
@@ -985,10 +1008,12 @@ class MOS6502:
         self._registers[S] = (self._registers[S] + 1) & 0xff
         self._current_address = 0x0100 | self._registers[S]
 
-        if self._current_data == 0x40: # Return from Interrupt
+        if opcode_int == 2: # Return from Interrupt
+            bits45 = self._registers[P] & 0b00110000
             self._registers[P] = self._read_byte_from_current_address(
                 'Fetch P from stack @ S + 1'
             ) & 0b11001111 # Ignore BRK flag and Bit 5
+            self._registers[P] |= bits45
 
             self._registers[S] = (self._registers[S] + 1) & 0xff
             self._current_address = 0x0100 | self._registers[S]
