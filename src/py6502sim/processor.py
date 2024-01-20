@@ -596,27 +596,59 @@ class MOS6502:
         value = self._addressing_modes[self._current_data & 0x1F]()
 
         if self._get_decimal_mode():
-            acc_val = (self._registers[ACC] >> 4) * 10 + (self._registers[ACC] & 0x0f)
-            value = (1 - 2 * subtract) * ((value >> 4) * 10 + (value & 0x0f)) - subtract
-            result = acc_val + value + self._get_carry_flag()
-            self._set_carry_flag(result >= 0 if subtract else result >= 100)
-            self._set_zero_flag(not result)
-            self._set_overflow_flag(result < -20 or result > 79)
-            if result < 0:
-                result = (result + 300) % 100
+            ##
+            ## I hate BCD so much!
+            ##
+            temp_val = (
+                (self._registers[ACC] & 0x0f) +
+                (1 - 2 * subtract) * (value & 0x0f) + self._get_carry_flag() - subtract
+            )
+            if subtract:
+                bin_result = self._registers[ACC] + (value^0xff) + self._get_carry_flag()
+                self._set_zero_flag(not bin_result & 0xff)
+                if temp_val < 0:
+                    temp_val = ((temp_val - 0x06) & 0x0f) - 0x10
+                result = (self._registers[ACC] & 0xf0) - (value & 0xf0) + temp_val
+                if result < 0:
+                    result -= 0x60
+                self._set_carry_flag(result >= 0)
+                value ^= 0xff
+                self._set_overflow_flag(
+                    (self._registers[ACC]^(bin_result & 0xff)) & (value^(bin_result & 0xff)) & 0x80
+                )
+                self._registers[ACC] = result & 0xff
+                self._set_negative_flag(bin_result & 0b10000000)
+            else:
+                self._set_zero_flag(
+                    not ((self._registers[ACC] + value + self._get_carry_flag()) & 0xff)
+                )
+                if temp_val >= 0x0a:
+                    temp_val = ((temp_val + 0x06) & 0x0f) + 0x10
+                result = (self._registers[ACC] & 0xf0) + (value & 0xf0) + temp_val
+                if result >= 0xa0:
+                    result += 0x60
+                self._set_carry_flag(result >= 0x100)
 
-            self._registers[ACC] = ((result % 100 // 10) << 4 ) + result % 10
+                signed_acc = self._registers[ACC] & 0xf0
+                signed_acc = signed_acc - (256 * (signed_acc >> 7))
+                signed_val = value & 0xf0
+                signed_val = signed_val - (256 * (signed_val >> 7))
+                signed_result = signed_acc + signed_val + temp_val
+                self._set_negative_flag(signed_result & 0b10000000)
+                self._set_overflow_flag(signed_result < -128 or signed_result > 127)
+
+                self._registers[ACC] = result & 0xff
+
         else:
             # Convert to signed numbers
             value ^= (0xff * subtract)
             result = self._registers[ACC] + value + self._get_carry_flag()
             self._set_carry_flag(result >> 8)
             result &= 0xff
-            self._set_zero_flag(not result)
             self._set_overflow_flag((self._registers[ACC]^result) & (value^result) & 0x80)
             self._registers[ACC] = result
-
-        self._set_negative_flag(self._registers[ACC] & 0b10000000)
+            self._set_zero_flag(not result)
+            self._set_negative_flag(result & 0b10000000)
 
     def _inst_bit_test(self) -> None:
         """
