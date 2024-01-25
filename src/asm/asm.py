@@ -5,6 +5,7 @@ from ast import literal_eval
 import re
 
 # TODO:
+#   * [HIGH IMPORTANCE] TESTING!!
 #   * Directives (not tokenized/implemented) (except .MOD)
 #   * Break compile functions down into smaller sub-functions
 #   * More meaningful Exception classes. Not everything will be syntax
@@ -222,7 +223,7 @@ class Assembler:
             self._test_bitwise_validity(int(match[1:]), 0)
         arith_string = re.sub(
             unot_regex,
-            lambda x: str((int(x[1:]) & 0xff) ^ 0xff),
+            lambda x: str((int(x.group()[1:]) & 0xff) ^ 0xff),
             arith_string
         )
 
@@ -237,7 +238,7 @@ class Assembler:
                 )
         arith_string = re.sub(
             ulow_regex,
-            lambda x: str(int(x[1:]) & 0xff),
+            lambda x: str(int(x.group()[1:]) & 0xff),
             arith_string
         )
 
@@ -252,7 +253,7 @@ class Assembler:
                 )
         arith_string = re.sub(
             uhigh_regex,
-            lambda x: str(int(x[1:]) >> 8),
+            lambda x: str(int(x.group()[1:]) >> 8),
             arith_string
         )
 
