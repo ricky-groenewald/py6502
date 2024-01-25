@@ -8,8 +8,8 @@ import re
 #   * [HIGH IMPORTANCE] TESTING!!
 #   * Directives (not tokenized/implemented) (except .MOD)
 #   * Break compile functions down into smaller sub-functions
-#   * More meaningful Exception classes. Not everything will be syntax
-#   * Add underscore _ to label/symbol names
+#   * More meaningful Exception classes. Not everything will be syntax. Also move error correction
+#     tips somewhere else and not inside the exception itself
 #   * Add clean state function
 
 # NOTE:
@@ -98,8 +98,10 @@ class Assembler:
 
         # If there are still some straggling $ or % symbols
         if asm_string.count('$'):
-            raise AssemblySyntaxError('$ symbols should be immediately followed by a hexadecimal value '
-                                 'and not be preceded by other alpha-numeric characters')
+            raise AssemblySyntaxError(
+                '$ symbols should be immediately followed by a hexadecimal value '
+                'and not be preceded by other alpha-numeric characters'
+            )
         if asm_string.count('%'):
             raise AssemblySyntaxError('% symbols should be immediately followed by a binary value '
                                  'and not be preceded by other alpha-numeric characters\n'
@@ -122,18 +124,14 @@ class Assembler:
                 'Labels cannot be assigned to symbol declarations'
             )
 
-        if self._is_hex(symbol_name):
-            raise AssemblySyntaxError(f'Cannot use a hex value {symbol_name} as a symbol name')
-
         # Check validity of symbol name
-        if not (
-            symbol_name[0].isalpha() and
-            symbol_name.isalnum()
-        ):
+        # Leading underscores should not fail the test
+        first_is_alpha = symbol_name.strip('_')[0].isalpha()
+        if not (first_is_alpha and re.fullmatch(r'([A-Z_]+[0-9]*)+', symbol_name)):
             raise AssemblySyntaxError(
                 f'Invalid symbol name: {symbol_name} -- '
-                'Symbol names should only contain alpha-numeric characters, and the first '
-                'character should be alphabetic'
+                'Symbol names should only use alpha-numeric characters and underscores, and the '
+                'first non-underscore character should be alphabetic'
             )
 
         if symbol_name in self._labels or symbol_name in self._symbols:
@@ -148,21 +146,22 @@ class Assembler:
 
     def _process_label(self, label_token: str) -> None:
         # Is a valid label name
-        if label_token[0].isalpha() and label_token.isalnum():
-            if label_token in self._labels or label_token in self._symbols:
-                raise AssemblySyntaxError(f'{label_token} already previously defined')
-
-            if label_token in INSTRUCTION_MAP:
-                raise AssemblySyntaxError(f'Cannot use opcode {label_token} as a label name')
-
-            self._labels[label_token] = self._get_current_program_counter()
-
-        else:
+        # Leading underscores should not fail the test
+        first_is_alpha = label_token.strip('_')[0].isalpha()
+        if not (first_is_alpha and re.fullmatch(r'([A-Z_]+[0-9]*)+', label_token)):
             raise AssemblySyntaxError(
                 f'Invalid label: {label_token} -- '
-                'Labels should only use alpha-numeric characters with its first character '
-                'being alphabetic, and end with a colon ":"'
+                'Labels should only use alpha-numeric characters and underscores, and should be '
+                'followed with a colon. The first non-underscore character should be alphabetic.'
             )
+
+        if label_token in self._labels or label_token in self._symbols:
+            raise AssemblySyntaxError(f'{label_token} already previously defined')
+
+        if label_token in INSTRUCTION_MAP:
+            raise AssemblySyntaxError(f'Cannot use opcode {label_token} as a label name')
+
+        self._labels[label_token] = self._get_current_program_counter()
 
 
     def _process_directive(self, directive: str, following_str: str) -> (None, list[str]):
@@ -195,7 +194,7 @@ class Assembler:
                     # Reserve space and return unknown/illegal symbol/label names
                     self._add_bytes_to_code([0,0])
                     unknown_names.update(re.findall(
-                        r'[0-9]*([A-Z]+[0-9]*)+',
+                        r'[0-9]*([A-Z_]+[0-9]*)+',
                         word
                     ))
             return list(unknown_names)
@@ -333,7 +332,7 @@ class Assembler:
         # Substitute any named identifiers with their values
         # If a symbol is defined by other symbols, no change is made
         # Might contain illegal identifier names, so this should be handled later
-        for named in set(re.findall(r'[A-Z0-9]+', value_string)):
+        for named in set(re.findall(r'[A-Z0-9_]+', value_string)):
             if named in self._symbols and isinstance(self._symbols[named], int):
                 value_string = value_string.replace(
                     named,
@@ -528,7 +527,7 @@ class Assembler:
 
         # Return any unknown/illegal symbol/label names
         return re.findall(
-            r'[0-9]*([A-Z]+[0-9]*)+',
+            r'[0-9]*([A-Z_]+[0-9]*)+',
             operand_value if isinstance(operand_value, str) else ''
         )
 
