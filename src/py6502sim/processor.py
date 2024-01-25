@@ -4,13 +4,13 @@ Simulator definitions and functions for the main 6502 micro processor
 from py6502sim.component import Component
 
 # TODO:
-#   * [IMPLEMENTATION] Implement Decimal Mode in ADC and SBC
 #   * [OPTIMIZATION] Move constants to separate file/class ?? Do I need to? Yes, because I don't
 #                    want users to be exposed to too many weird variables on importing a class.
 #                    Also, move ALL micro-op strings to the constants as well.
 #                    (yes, that includes all 151 mnemonic/addressing combinations)
 #   * [OPTIMIZATION] Move stack PUSH/PULL commands to separate function?
 #   * [OPTIMIZATION] Better solution than "no_skip"?
+#   * [MISSING] Rewrite docstrings to reflect all cases of returns (e.g. step function + verbose)
 
 # Register List Offset Constants
 ACC = 0
@@ -199,7 +199,7 @@ class MOS6502:
             self._addressing_modes[mode] = self._zero_page_mode_fetch_write_data    # Zero Page
             self._addressing_modes[0x10 | mode] = self._zp_x_mode_fetch_write_data  # Zero Page, X
 
-        self._addressing_modes[0x0A] = self._accumulator_mode_fetch_write_data    # Accumulator
+        self._addressing_modes[0x0A] = self._accumulator_mode_fetch_write_data      # Accumulator
         self._addressing_modes[0x01] = self._ind_x_mode_fetch_write_data            # (Indirect, X)
         self._addressing_modes[0x11] = self._ind_y_mode_fetch_write_data            # (Indirect), Y
 
@@ -678,7 +678,7 @@ class MOS6502:
         """
         opcode_int = self._current_data >> 5
         opcode_str = MOS6502._BRANCH_OP_CODES[opcode_int]
-        self._append_to_first_micro_desc(opcode_str)
+        self._append_to_first_micro_desc(opcode_str + ' r')
         self._set_disasm_token(opcode_str)
 
         offset = self._read_next_program_byte('Fetch Branch Offset @ PC + 1')
@@ -719,7 +719,7 @@ class MOS6502:
         """
         [BRK] Break Operation
         [IRQ] Interrupt Request
-        [NMI] 
+        [NMI] Non-maskable Interrupt
         [RES] Reset Operation
         
         "brk_type" argument:
