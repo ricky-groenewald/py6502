@@ -5,9 +5,11 @@ from ast import literal_eval
 import re
 
 # TODO:
-#   * Symbols (tokenized, but not validated)
 #   * Directives (not tokenized/implemented) (except .MOD)
-#   * Forego own arith_eval and instead use python eval, but well escaped?
+#   * Break compile functions down into smaller sub-functions
+#   * More meaningful Exception classes. Not everything will be syntax
+#   * Add underscore _ to label/symbol names
+#   * Add clean state function
 
 # NOTE:
 #   * First versions of the assembler will be a very DUMB assembler
@@ -21,22 +23,25 @@ class AssemblySyntaxError(Exception):
     Syntax error was encountered in the assembly code
     """
 
-class TokenizerError(Exception):
+class IllegalOperandError(Exception):
     """
-    An error has occured during tokenizing
+    Illegal operand/addressing mode was provided to an opcode
     """
 
 class Assembler:
     """
     Class definition for the 6502 assembler
     """
-    OPERAND_REGEX = r'[%$0-9A-Z~^|<>&+\-\/\*\s\(\)]+'
-
     def __init__(self) -> None:
-        self._tokens: dict[int, list] = {} # {offset1: tokens1, offset2: tokens2, ...}
+        self._code_bytes: dict[int, list[int]] = {} # {offset1: [bytes], offset2: [bytes], ...}
         self._current_offset: int = 0
         self._labels: dict[str, int] = {} # {label: absolute address}
+        self._labels_from_prev_pass: dict[str, int] = {} # {label: absolute address}
         self._symbols: dict[str, (int, str)] = {} # {symbol: expression}
+        self._errors: list[tuple[int, str]] = []
+
+        # Uncompiled token tuple: (address_offset, code_index, opcode_str, operand_str)
+        self._uncompiled_tokens: list[tuple[int, int, str, str]] = []
 
     def _is_hex(self, hex_string: str) -> bool:
         return bool(re.fullmatch(r'[0-9a-fA-F]+', hex_string))
@@ -45,23 +50,26 @@ class Assembler:
         if self._is_hex(hex_str):
             return literal_eval(f'0x{hex_str}')
 
-        raise TokenizerError(f'Invalid hexadecimal value: {hex_str}')
+        raise AssemblySyntaxError(f'Invalid hexadecimal value: {hex_str}')
 
     def _is_bin(self, bin_string: str) -> bool:
         return bool(re.fullmatch(r'[01]+', bin_string))
+
+    def _is_dec(self, dec_string: str) -> bool:
+        return bool(re.fullmatch(r'[0-9]+', dec_string))
 
     def _parse_bin(self, bin_str: str) -> int:
         if bin_str[0] == '%':
             if self._is_bin(bin_str[1:]):
                 return literal_eval(f'0b{bin_str[1:]}')
 
-            raise TokenizerError(f'Invalid binary value: {bin_str[1:]} -- '
+            raise AssemblySyntaxError(f'Invalid binary value: {bin_str[1:]} -- '
                                  '(TIP: Use ".MOD" for the Modulo % operation)')
 
         if self._is_bin(bin_str[2:]):
             return literal_eval(f'0b{bin_str[2:]}')
 
-        raise TokenizerError(f'Invalid binary value: {bin_str[2:]}')
+        raise AssemblySyntaxError(f'Invalid binary value: {bin_str[2:]}')
 
     def _parse_numbers(self, asm_string: str) -> str:
         # We purposefully capture incorrect values
@@ -69,40 +77,48 @@ class Assembler:
         # 0x00FF type
         asm_string = re.sub(
             r'(?<![a-zA-Z0-9])0x[a-zA-Z0-9]+',
-            lambda x: self._parse_hex(x.group()[2:]),
+            lambda x: str(self._parse_hex(x.group()[2:])),
             asm_string
         )
 
         # $00FF type
         asm_string = re.sub(
             r'(?<![a-zA-Z0-9])\$[a-zA-Z0-9]+',
-            lambda x: self._parse_hex(x.group()[1:]),
+            lambda x: str(self._parse_hex(x.group()[1:])),
             asm_string
         )
 
         # 0b1001 type or %1001 type
         asm_string = re.sub(
             r'(?<![a-zA-Z0-9])((%)|(0b))[a-zA-Z0-9]+',
-            self._parse_bin,
+            lambda x: str(self._parse_bin(x.group())),
             asm_string
         )
 
         # If there are still some straggling $ or % symbols
         if asm_string.count('$'):
-            raise TokenizerError('$ symbols should be immediately followed by a hexadecimal value '
+            raise AssemblySyntaxError('$ symbols should be immediately followed by a hexadecimal value '
                                  'and not be preceded by other alpha-numeric characters')
         if asm_string.count('%'):
-            raise TokenizerError('% symbols should be immediately followed by a binary value '
+            raise AssemblySyntaxError('% symbols should be immediately followed by a binary value '
                                  'and not be preceded by other alpha-numeric characters\n'
                                  '(TIP: Use ".MOD" for the Modulo % operation)')
 
         return asm_string
 
     def _process_symbol(self, symbol_name: str, expression: str) -> None:
+        symbol_name = symbol_name.strip()
+        expression = expression.strip()
+
         if not expression or re.findall(r'[=:]+', expression):
             raise AssemblySyntaxError(
                 'Invalid symbol declaration -- '
                 'Symbol declarations should follow "SYMBOL = EXPRESSION"'
+            )
+
+        if symbol_name.count(':'):
+            raise AssemblySyntaxError(
+                'Labels cannot be assigned to symbol declarations'
             )
 
         if self._is_hex(symbol_name):
@@ -131,21 +147,14 @@ class Assembler:
 
     def _process_label(self, label_token: str) -> None:
         # Is a valid label name
-        if label_token[:-1].isalnum():
-            label_name = label_token[:-1]
+        if label_token[0].isalpha() and label_token.isalnum():
+            if label_token in self._labels or label_token in self._symbols:
+                raise AssemblySyntaxError(f'{label_token} already previously defined')
 
-            if self._is_hex(label_name):
-                raise AssemblySyntaxError(f'Cannot use a hex value {label_name} as a label name')
+            if label_token in INSTRUCTION_MAP:
+                raise AssemblySyntaxError(f'Cannot use opcode {label_token} as a label name')
 
-            if label_name in self._labels or label_name in self._symbols:
-                raise AssemblySyntaxError(f'{label_name} already previously defined')
-
-            if label_name in INSTRUCTION_MAP:
-                raise AssemblySyntaxError(f'Cannot use opcode {label_name} as a label name')
-
-            self._labels[label_name] = (
-                len(self._tokens.setdefault(self._current_offset, [])) + self._current_offset
-            )
+            self._labels[label_token] = self._get_current_program_counter()
 
         else:
             raise AssemblySyntaxError(
@@ -155,19 +164,54 @@ class Assembler:
             )
 
 
-    def _process_directive(self, directive: str, operand: str) -> None:
-        pass
+    def _process_directive(self, directive: str, following_str: str) -> (None, list[str]):
+        if directive == '.ORG':
+            operand_str = self._parse_numbers((''.join(following_str.split(';')[:1])).strip())
+            if not self._is_dec(operand_str):
+                raise AssemblySyntaxError('.ORG directive only accepts number literal operands')
+            offset = int(operand_str)
+
+            if self._current_offset >= offset:
+                raise AssemblySyntaxError(
+                    f'Attempting to rewind program counter offset from ${self._current_offset:04X}'
+                    f' back to ${offset:04X}'
+                )
+
+            self._current_offset = offset
+            self._add_bytes_to_code([]) # Important to have this initialized
+            return
+
+        if directive in ('.WORD', '.ADDR'):
+            operand_str = self._parse_numbers((''.join(following_str.split(';')[:1])).strip())
+            unknown_names = set()
+            for word in operand_str.split(','):
+                word_value = self._get_value(word)
+                if isinstance(word_value, int) and 0 <= word_value <= 0xffff:
+                    self._add_bytes_to_code([word_value & 0xff, word_value >> 8])
+                elif isinstance(word_value, int):
+                    raise AssemblySyntaxError(f'{word} value not a positive 16-bit number')
+                else:
+                    # Reserve space and return unknown/illegal symbol/label names
+                    self._add_bytes_to_code([0,0])
+                    unknown_names.update(re.findall(
+                        r'[0-9]*([A-Z]+[0-9]*)+',
+                        word
+                    ))
+            return list(unknown_names)
+
+    def _get_current_program_counter(self):
+        return len(self._code_bytes.get(self._current_offset, [])) + self._current_offset
 
     def _test_bitwise_validity(self, value1: int, value2: int) -> None:
         if not (-128 <= value1 <= 255 and -128 <= value2 <= 255):
-            raise TokenizerError(
-                'Number overflow -- Bitwise operations only operate on 8-bit values'
-            )
+            raise AssemblySyntaxError('Bitwise OR/XOR/AND/NOT only operate on 8-bit values')
 
     def _eval_arithmetic(self, arith_string: str) -> (str, int):
-        # Using assembly operator precedence as defined in ca65's manual:
-        # https://cc65.github.io/doc/ca65.html#ss4.1
-        # EXCEPT: Shift left/right takes precedence over ^,&,.MOD,/,*
+        """
+        Using assembly operator precedence as defined in ca65's manual:
+        https://cc65.github.io/doc/ca65.html#ss4.1
+        EXCEPT: Shift left/right takes precedence over ^,&,.MOD,/,*
+        """
 
         # There should be no syntax errors here. If there are, the regexes are wrong.
 
@@ -175,10 +219,10 @@ class Assembler:
         # First test all the expressions, and then evaluate the values
         unot_regex = r'~[-+]?[0-9]+'
         for match in re.findall(unot_regex, arith_string):
-            self._test_bitwise_validity(literal_eval(match[1:]), 0)
+            self._test_bitwise_validity(int(match[1:]), 0)
         arith_string = re.sub(
             unot_regex,
-            lambda x: str((literal_eval(x[1:]) & 0xff) ^ 0xff),
+            lambda x: str((int(x[1:]) & 0xff) ^ 0xff),
             arith_string
         )
 
@@ -186,14 +230,14 @@ class Assembler:
         # First test all the expressions, and then evaluate the values
         ulow_regex = r'(?<!<)<[-+]?[0-9]+'
         for match in re.findall(ulow_regex, arith_string):
-            value = literal_eval(match[1:])
-            if value < 0 or value > 0xffff:
-                raise TokenizerError(
+            value = int(match[1:])
+            if not 0 <= value <= 0xffff:
+                raise AssemblySyntaxError(
                     'Unary low-byte can only be obtained from positive 16-bit numbers'
                 )
         arith_string = re.sub(
             ulow_regex,
-            lambda x: str(literal_eval(x[1:]) & 0xff),
+            lambda x: str(int(x[1:]) & 0xff),
             arith_string
         )
 
@@ -201,27 +245,31 @@ class Assembler:
         # First test all the expressions, and then evaluate the values
         uhigh_regex = r'(?<!>)>[-+]?[0-9]+'
         for match in re.findall(uhigh_regex, arith_string):
-            value = literal_eval(match[1:])
-            if value < 0 or value > 0xffff:
-                raise TokenizerError(
+            value = int(match[1:])
+            if not 0 <= value <= 0xffff:
+                raise AssemblySyntaxError(
                     'Unary low-byte can only be obtained from positive 16-bit numbers'
                 )
         arith_string = re.sub(
             uhigh_regex,
-            lambda x: str(literal_eval(x[1:]) & 0xff),
+            lambda x: str(int(x[1:]) >> 8),
             arith_string
         )
 
         # Bitwise shift-left, Bitwise shift-right
         # First test for negative numbers then evaluate from left to right
         if re.search(r'((<<)|(>>))-[0-9]+', arith_string):
-            raise TokenizerError('Bitwise shifting with a negative number')
+            raise AssemblySyntaxError('Bitwise shifting with a negative number')
         shift_regex = r'(?<![0-9])[-+]?[0-9]+((<<)|(>>))[+]?[0-9]+'
         while (match := re.search(shift_regex, arith_string)):
             op = '<<' if match.group().count('<<') else '>>'
-            value1, value2 = [literal_eval(val) for val in match.group().split(op)]
+            value1, value2 = [int(val) for val in match.group().split(op)]
+            if not 0 <= value1 <= 0xffff:
+                raise AssemblySyntaxError(
+                    'Bitwise shifts only operate on positive 16-bit numbers'
+                )
             if op == '<<':
-                result = value1 << value2
+                result = (value1 << value2) & 0xffff
             else:
                 result = value1 >> value2
             arith_string = re.sub(
@@ -235,7 +283,7 @@ class Assembler:
         multi_regex = r'(?<![0-9])[-+]?[0-9]+[%/*&^][-+]?[0-9]+'
         while (match := re.search(multi_regex, arith_string)):
             op = re.search(r'[%/*&^]', match.group()).group()
-            value1, value2 = [literal_eval(val) for val in match.group().split(op)]
+            value1, value2 = [int(val) for val in match.group().split(op)]
             if op == '%':
                 result = value1 % value2
             elif op == '/':
@@ -245,7 +293,7 @@ class Assembler:
             elif op == '&':
                 self._test_bitwise_validity(value1, value2)
                 result = value1 & value2
-            else:
+            else: # XOR^
                 self._test_bitwise_validity(value1, value2)
                 result = value1 ^ value2
             arith_string = re.sub(
@@ -260,13 +308,13 @@ class Assembler:
         while (match := re.search(addsubor_regex, arith_string)):
             op_match = re.search(r'(?<=[0-9])[-+|](?=[-+]?[0-9]+)', match.group())
             op = op_match.group()
-            value1 = literal_eval(match.group()[:op_match.span()[0]])
-            value2 = literal_eval(match.group()[op_match.span()[1]:])
+            value1 = int(match.group()[:op_match.span()[0]])
+            value2 = int(match.group()[op_match.span()[1]:])
             if op == '+':
                 result = value1 + value2
             elif op == '-':
                 result = value1 - value2
-            else:
+            else: # OR|
                 self._test_bitwise_validity(value1, value2)
                 result = value1 | value2
             arith_string = re.sub(
@@ -276,7 +324,7 @@ class Assembler:
                 count=1
             )
 
-        return literal_eval(arith_string)
+        return int(arith_string)
 
     def _get_value(self, value_string: str) -> (str, int):
         # value_string should not contain any uppercase characters at this point
@@ -284,16 +332,21 @@ class Assembler:
         # Substitute any named identifiers with their values
         # If a symbol is defined by other symbols, no change is made
         # Might contain illegal identifier names, so this should be handled later
-        for named in set(re.findall(r'[A-Z0-9]', value_string)):
+        for named in set(re.findall(r'[A-Z0-9]+', value_string)):
             if named in self._symbols and isinstance(self._symbols[named], int):
                 value_string = value_string.replace(
                     named,
                     str(self._symbols[named])
                 )
-            elif named in self._labels:
+            elif named in self._labels: # First check current labels
                 value_string = value_string.replace(
                     named,
                     str(self._labels[named])
+                )
+            elif named in self._labels_from_prev_pass: # Then check labels from previous pass
+                value_string = value_string.replace(
+                    named,
+                    str(self._labels_from_prev_pass[named])
                 )
 
         # Repeatedly try to evaluate literal expressions in parentheses
@@ -316,34 +369,181 @@ class Assembler:
         if re.fullmatch(full_regex, reduced_string):
             return self._eval_arithmetic(reduced_string)
 
+        # If there are no more symbol/label names... then it wasn't a properly formed expression
+        if not re.search(r'[A-Z]', value_string):
+            raise AssemblySyntaxError('Syntax error in operand')
+
         return value_string
 
-    def _tokenize_opcode(self, opcode: str, operand: str) -> None:
-        implied_ops = [op for op, modes in INSTRUCTION_MAP.items() if modes[4] is not None]
+    def _add_bytes_to_code(self, byte_list: list[int]) -> None:
+        self._code_bytes.setdefault(self._current_offset, []).extend(byte_list)
 
-        # An opcode with implied adressing mode was entered
-        if opcode in implied_ops:
-            # Should have no operands
-            if operand:
-                raise AssemblySyntaxError(
-                    f'Opcode {opcode} does not take operands'
-                )
-
-            self._tokens.setdefault(self._current_offset, []).append(INSTRUCTION_MAP[opcode][4])
-            return
-
-        # Handle opcodes with operands
-
-    def _tokenize_and_append(self, asm_string: str) -> None:
+    def _compile_opcode(self, opcode: str, operand: str) -> list[str]:
         """
-        Tokenizes a line of text and appends the tokens to the instance's _tokens variable.
+        Will attempt to compile to bytes if operand can be evaluated.
+        Otherwise, will reserve an estimated amount of space in code bytes
+        
+        Returns True if operand was successfully computed, and False otherwise
+        """
+        operand = re.sub(r'[\s]+', '', operand) # Remove whitespace
+        operand_value = None
+        opcode_index = None
+
+        ##
+        # Test for each addressing mode
+        ##
+        # An opcode with implied adressing mode or accumulator adressing mode was entered
+        if not operand:
+            opcode_index = 3 if opcode in ('ASL', 'ROL', 'LSR', 'ROR') else 4
+            operand_bytes = [] if opcode != 'BRK' else [0]
+
+        # Immediate "#"
+        elif operand.startswith('#'):
+            operand_value = self._get_value(operand[1:])
+            if isinstance(operand_value, int):
+                if not -128 <= operand_value <= 255:
+                    raise IllegalOperandError(
+                        f'Immediate value 8-bit overflow: #${operand_value:X}'
+                    )
+                operand_bytes = [operand_value & 0xff]
+            else:
+                operand_bytes = [0]
+            opcode_index = 0
+
+        # Indexed Indirect "(zp,X)"
+        elif (match := re.search(r'(?<=^\().+(?=,X\)$)', operand)):
+            operand_value = self._get_value(match.group())
+            if isinstance(operand_value, int):
+                if not -128 <= operand_value <= 255:
+                    raise IllegalOperandError(
+                        f'Zero-page address out of range: (${operand_value:X},X)'
+                    )
+                operand_bytes = [operand_value & 0xff]
+            else:
+                operand_bytes = [0]
+            opcode_index = 5
+
+        # Indirect Indexed "(zp),Y"
+        elif (match := re.search(r'(?<=^\().+(?=\),Y$)', operand)):
+            operand_value = self._get_value(match.group())
+            if isinstance(operand_value, int):
+                if not -128 <= operand_value <= 255:
+                    raise IllegalOperandError(
+                        f'Zero-page address out of range: (${operand_value:02X}),Y'
+                    )
+                operand_bytes = [operand_value & 0xff]
+            else:
+                operand_bytes = [0]
+            opcode_index = 6
+
+        # Absolute Indirect "(a)"
+        elif (match := re.search(r'(?<=^\().+(?=\)$)', operand)):
+            operand_value = self._get_value(match.group())
+            if isinstance(operand_value, int):
+                if not -128 <= operand_value <= 0xffff:
+                    raise IllegalOperandError(f'Address out of range: (${operand_value:04X})')
+                if operand_value < 0:
+                    operand_value &= 0xff
+                operand_bytes = [operand_value & 0xff, operand_value >> 8]
+            else:
+                operand_bytes = [0, 0]
+            opcode_index = 11
+
+        # Indexed Zero-page "zp,X" "zp,Y"
+        # Indexed Absolute   "a,X"  "a,Y"
+        elif re.search(r'.+,[XY]$', operand):
+            operand_value = self._get_value(operand[:-2])
+            if isinstance(operand_value, int):
+                if not -128 <= operand_value <= 0xffff:
+                    raise IllegalOperandError(
+                        f'Address out of range: ${operand_value:02X}{operand[-2:]}'
+                    )
+                if not -128 <= operand_value <= 0xff: # Absolute
+                    opcode_index = 8 if operand[-1] == 'X' else 9
+                    operand_bytes = [operand_value & 0xff, operand_value >> 8]
+                else: # Zero-page
+                    opcode_index = 7 if operand[-1] == 'X' else 12
+                    operand_bytes = [operand_value & 0xff]
+                    if INSTRUCTION_MAP[opcode][opcode_index] is None:
+                        opcode_index = 8 if operand[-1] == 'X' else 9
+                        operand_bytes.append(0)
+            else:
+                # Determine what the maximum needed bytes would be for OPCODE
+                opcode_index = 8 if operand[-1] == 'X' else 9
+                if INSTRUCTION_MAP[opcode][opcode_index] is None:
+                    opcode_index = 7 if operand[-1] == 'X' else 12
+                    operand_bytes = [0]
+                else:
+                    operand_bytes = [0, 0]
+
+
+        # Absolute "a"
+        # Zero-page "zp"
+        # Relative "Rel"
+        else:
+            operand_value = self._get_value(operand)
+
+            if opcode in ('BPL', 'BMI', 'BVC', 'BVS', 'BCC', 'BCS', 'BNE', 'BEQ'):
+                if isinstance(operand_value, int):
+                    if not 0 <= operand_value <= 0xffff:
+                        raise IllegalOperandError(
+                            f'Illegal branch jump location: ${operand_value}'
+                        )
+                    jump_size = operand_value - (self._get_current_program_counter() + 2)
+                    if not -128 <= jump_size <= 127:
+                        raise IllegalOperandError(
+                            f'Branch jump location out of [-128, 127] range: ${operand_value:02X}'
+                            f' -- Reference address is ${self._get_current_program_counter()+2:04X}'
+                        )
+                    operand_bytes = [jump_size & 0xff]
+                else:
+                    operand_bytes = [0]
+                opcode_index = 10
+
+            else:
+                if isinstance(operand_value, int):
+                    if not -128 <= operand_value <= 0xffff:
+                        raise IllegalOperandError(
+                            f'Address out of range: ${operand_value:02X}{operand[-2:]}'
+                        )
+                    if not -128 <= operand_value <= 0xff: # Absolute
+                        opcode_index = 1
+                        operand_bytes = [operand_value & 0xff, operand_value >> 8]
+                    else: # Zero-page
+                        opcode_index = 2
+                        operand_bytes = [operand_value & 0xff]
+                        if INSTRUCTION_MAP[opcode][opcode_index] is None:
+                            opcode_index = 1
+                            operand_bytes.append(0)
+                else:
+                    opcode_index = 1
+                    operand_bytes = [0,0]
+
+        opcode_hex = INSTRUCTION_MAP[opcode][opcode_index]
+        if opcode_hex is None:
+            raise IllegalOperandError(f'Illegal addressing mode for opcode {opcode}')
+
+        self._add_bytes_to_code([opcode_hex] + operand_bytes)
+
+        # Return any unknown/illegal symbol/label names
+        return re.findall(
+            r'[0-9]*([A-Z]+[0-9]*)+',
+            operand_value if isinstance(operand_value, str) else ''
+        )
+
+    def _compile_line(self, asm_string: str) -> (None, list[str]):
+        """
+        "Tokenizes" a line of text and immediately attempts to compile it to bytes.
+
+        If a line cannot be fully compiled, a list of the unknown symbol/label names is returned.
 
         This function should only be called with a single line of code as its argument
         """
         if asm_string.count('\n') > 1 or asm_string.find('\n') not in [-1, len(asm_string) - 1]:
-            raise TokenizerError('Multiple lines fed into the tokenizer. Only supply single lines.')
+            raise AssemblySyntaxError(
+                'Multiple lines fed into the line compiler. Only supply single lines.'
+            )
 
-        # Return on empty string
         if not asm_string.strip():
             return
 
@@ -353,58 +553,115 @@ class Assembler:
 
         # We pass case-sensitive string in first to parse numbers to decimal
         # After parsing is complete, we will convert to uppercase
-        asm_string = self._parse_numbers(asm_string[:comment_index].strip()).upper()
+        processed_string = self._parse_numbers(asm_string[:comment_index].strip()).upper()
+
+        # Return on empty string
+        if not processed_string:
+            return
 
         # Since we have already handled all % characters, we can now
         # replace the .MOD operator with %
-        asm_string = re.sub(r'\.MOD', '%', asm_string)
+        processed_string = re.sub(r'\.MOD', '%', processed_string)
+
+        # We can also replace the @ character with the current Program Counter
+        processed_string = re.sub(
+            r'@',
+            str(self._get_current_program_counter()),
+            processed_string
+        )
 
         # First check if symbols are being assigned
-        if '=' in asm_string:
-            self._process_symbol(*asm_string.strip().split('=', 1))
+        if '=' in processed_string:
+            self._process_symbol(*processed_string.strip().split('=', 1))
+            return
 
-        string_split = asm_string.split()
+        string_split = processed_string.split()
 
         # Test if first token is potentially a label
         if string_split[0][-1] == ':':
             label_token = string_split.pop(0)
-            self._process_label(label_token)
+            self._process_label(label_token[:-1])
 
-        # Line only had a label or comment
+        # Line only had a label
         if not string_split:
             return
 
         # Handle any possible directives
         if string_split[0][0] == '.':
-            self._process_directive(string_split[0], ' '.join(string_split[1:]))
+            # Pass the directive and original string following the directive
+            self._process_directive(
+                string_split[0],
+                ''.join(asm_string.upper().split(string_split[0], 1)[1:])
+            )
             return
 
         # Handle opcodes
         if string_split[0] in INSTRUCTION_MAP:
-            self._tokenize_opcode(string_split[0], ' '.join(string_split[1:]))
-            return
+            return self._compile_opcode(string_split[0], ''.join(string_split[1:]))
 
-        raise TokenizerError(f'Unrecognized statement: {' '.join(string_split)}')
-
-    def _validate_symbols(self) -> None:
-        pass
-
-    def _assemble_tokens(self) -> list[int]:
-        pass
-
-    def assemble_from_file(self, filename: str) -> bytes:
-        self._tokens = {}
-        self._labels = {}
-        pass
+        raise AssemblySyntaxError(f'Unrecognized statement: {' '.join(string_split)}')
 
     def assemble_from_string(self, asm_string: str) -> bytes:
-        self._tokens = {}
+        self._code_bytes = {}
+        self._current_offset = 0
         self._labels = {}
-        pass
+        self._labels_from_prev_pass = {}
+        self._symbols = {}
+        unknowns = []
 
+        for line in asm_string.split('\n'):
+            unknowns.extend(self._compile_line(line) or [])
+
+        if unknowns:
+            prev_code_bytes = {}
+            while prev_code_bytes != self._code_bytes:
+                prev_code_bytes = self._code_bytes
+                self._labels_from_prev_pass = self._labels
+                self._code_bytes = {}
+                self._current_offset = 0
+                self._labels = {}
+                self._symbols = {}
+                unknowns = []
+
+                for line in asm_string.split('\n'):
+                    unknowns.extend(self._compile_line(line) or [])
+
+        if unknowns:
+            raise AssemblySyntaxError(f'Unknown labels referenced: {unknowns}')
+
+        code = []
+        code_offsets = sorted(self._code_bytes.keys())
+        for index, offset in enumerate(code_offsets):
+            offset_code_len = len(self._code_bytes[offset])
+
+            if offset + offset_code_len > 0x10000:
+                raise AssemblySyntaxError('Assembled code larger than 64K')
+
+            if index + 1 < len(code_offsets):
+                next_offset = code_offsets[index + 1]
+                if not offset + offset_code_len <= next_offset:
+                    raise AssemblySyntaxError(
+                        f'Code segment at offset ${offset:03X} (Bytes: {offset_code_len}) '
+                        f'overlaps with code segment at offset {next_offset:03X}'
+                    )
+
+                # Pad code with zeros between offsets
+                self._code_bytes[offset].extend([0] * (next_offset - offset - offset_code_len))
+
+            code.extend(self._code_bytes[offset])
+
+        return bytes(code)
+
+    def assemble_from_file(self, filename: str) -> bytes:
+        with open(filename, 'r', encoding='utf-8') as file_handle:
+            return self.assemble_from_string(file_handle.read())
+
+    def assemble_from_file_and_output(self, src_filename: str, dst_filename: str) -> int:
+        with open(dst_filename, 'wb') as file_handle:
+            return file_handle.write(self.assemble_from_file(src_filename))
 
 INSTRUCTION_MAP = {
-#MNEMONIC: [ #  ,   a  ,   zp ,   Acc,   Imp, ($,X), ($),Y,  zp,X,   a,X,   a,Y,   Rel,   ($),  zp,Y]
+#MNEMONIC: [ #  ,   a  ,   zp ,   Acc,   Imp, ($,X), ($),Y,  zp,X,   a,X,   a,Y,   r  ,   ($),  zp,Y]
     'ADC': [0x69,  0x6D,  0x65,  None,  None,  0x61,  0x71,  0x75,  0x7D,  0x79,  None,  None,  None],
     'AND': [0x29,  0x2D,  0x25,  None,  None,  0x21,  0x31,  0x35,  0x3D,  0x39,  None,  None,  None],
     'ASL': [None,  0x0E,  0x06,  0x0A,  None,  None,  None,  0x16,  0x1E,  None,  None,  None,  None],
@@ -415,7 +672,9 @@ INSTRUCTION_MAP = {
     'BMI': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x30,  None,  None],
     'BNE': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0xD0,  None,  None],
     'BPL': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x10,  None,  None],
-    'BRK': [None,  None,  None,  None,  0x00,  None,  None,  None,  None,  None,  None,  None,  None],
+    # BRK is always a 2-byte instruction, but the user does not need to specify an operand.
+    # However we will make provision for it having either an immediate value or no operand at all.
+    'BRK': [0x00,  None,  None,  None,  0x00,  None,  None,  None,  None,  None,  None,  None,  None],
     'BVC': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x50,  None,  None],
     'BVS': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x70,  None,  None],
     'CLC': [None,  None,  None,  None,  0x18,  None,  None,  None,  None,  None,  None,  None,  None],
@@ -452,14 +711,14 @@ INSTRUCTION_MAP = {
     'SEC': [None,  None,  None,  None,  0x38,  None,  None,  None,  None,  None,  None,  None,  None],
     'SED': [None,  None,  None,  None,  0xF8,  None,  None,  None,  None,  None,  None,  None,  None],
     'SEI': [None,  None,  None,  None,  0x78,  None,  None,  None,  None,  None,  None,  None,  None],
-    'STA': [None,  None,  0x8D,  0x85,  None,  0x81,  0x91,  0x95,  0x9D,  0x99,  None,  None,  None],
-    'STX': [None,  None,  0x8E,  0x86,  None,  None,  None,  None,  None,  None,  None,  None,  0x96],
-    'STY': [None,  None,  0x8C,  0x84,  None,  None,  None,  0x94,  None,  None,  None,  None,  None],
+    'STA': [None,  0x8D,  0x85,  None,  None,  0x81,  0x91,  0x95,  0x9D,  0x99,  None,  None,  None],
+    'STX': [None,  0x8E,  0x86,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x96],
+    'STY': [None,  0x8C,  0x84,  None,  None,  None,  None,  0x94,  None,  None,  None,  None,  None],
     'TAX': [None,  None,  None,  None,  0xAA,  None,  None,  None,  None,  None,  None,  None,  None],
     'TAY': [None,  None,  None,  None,  0xA8,  None,  None,  None,  None,  None,  None,  None,  None],
     'TSX': [None,  None,  None,  None,  0xBA,  None,  None,  None,  None,  None,  None,  None,  None],
     'TXA': [None,  None,  None,  None,  0x8A,  None,  None,  None,  None,  None,  None,  None,  None],
     'TXS': [None,  None,  None,  None,  0x9A,  None,  None,  None,  None,  None,  None,  None,  None],
     'TYA': [None,  None,  None,  None,  0x98,  None,  None,  None,  None,  None,  None,  None,  None],
-#MNEMONIC: [ #  ,   a  ,   zp ,   Acc,   Imp, ($,X), ($),Y,  zp,X,   a,X,   a,Y,   Rel,   ($),  zp,Y]
+#MNEMONIC: [ #  ,   a  ,   zp ,   Acc,   Imp, ($,X), ($),Y,  zp,X,   a,X,   a,Y,   r  ,   ($),  zp,Y]
 }
