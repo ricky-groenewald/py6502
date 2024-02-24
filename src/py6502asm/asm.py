@@ -6,6 +6,7 @@ import re
 
 # TODO:
 #   * [HIGH IMPORTANCE] TESTING!!
+#   * _parse_numbers should be looked at again because it is not checking for trailing numbers (should it?)
 #   * Directives (not tokenized/implemented) (except .MOD)
 #   * Break compile functions down into smaller sub-functions
 #   * More meaningful Exception classes. Not everything will be syntax. Also move error correction
@@ -58,6 +59,12 @@ class Assembler:
 
     def _is_dec(self, dec_string: str) -> bool:
         return bool(re.fullmatch(r'[0-9]+', dec_string))
+    
+    def _parse_char(self, char: str) -> int:
+        if not char[1].isascii():
+            raise AssemblySyntaxError(f'Invalid ascii character: {char[1]}')
+
+        return ord(char[1])
 
     def _parse_bin(self, bin_str: str) -> int:
         if bin_str[0] == '%':
@@ -93,6 +100,13 @@ class Assembler:
         asm_string = re.sub(
             r'(?<![a-zA-Z0-9])((%)|(0b))[a-zA-Z0-9]+',
             lambda x: str(self._parse_bin(x.group())),
+            asm_string
+        )
+
+        # 'c' type
+        asm_string = re.sub(
+            r"(?<![a-zA-Z0-9'])'.'",
+            lambda x: str(self._parse_char(x.group())),
             asm_string
         )
 
@@ -649,6 +663,7 @@ class Assembler:
                 self._code_bytes[offset].extend([0] * (next_offset - offset - offset_code_len))
 
             code.extend(self._code_bytes[offset])
+            print(f'${offset:04X}: Assembled {offset_code_len} bytes')
 
         return bytes(code)
 
