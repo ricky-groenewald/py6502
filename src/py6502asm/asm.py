@@ -3,11 +3,14 @@
 """
 from ast import literal_eval
 import re
+import codecs
 
 # TODO:
 #   * [HIGH IMPORTANCE] TESTING!!
 #   * _parse_numbers should be looked at again because it is not checking for trailing numbers (should it?)
+#   * _parse_numbers should also handle string literals??
 #   * Directives (not tokenized/implemented) (except .MOD)
+#   * Put .MOD somewhere else
 #   * Break compile functions down into smaller sub-functions
 #   * More meaningful Exception classes. Not everything will be syntax. Also move error correction
 #     tips somewhere else and not inside the exception itself
@@ -177,10 +180,17 @@ class Assembler:
 
         self._labels[label_token] = self._get_current_program_counter()
 
+    def _process_string_literal(self, string_literal: str) -> list[int]:
+        string_literal = string_literal[1:-1] # Remove quotes
 
-    def _process_directive(self, directive: str, following_str: str) -> (None, list[str]):
+        if not string_literal.isascii():
+            raise AssemblySyntaxError('String literals should only contain ASCII characters')
+
+        return list(string_literal.encode().decode('unicode_escape').encode())
+
+    def _process_directive(self, directive: str, following_str: str) -> None | list[str]:
         if directive == '.ORG':
-            operand_str = self._parse_numbers((''.join(following_str.split(';')[:1])).strip())
+            operand_str = self._parse_numbers(following_str)
             if not self._is_dec(operand_str):
                 raise AssemblySyntaxError('.ORG directive only accepts number literal operands')
             offset = int(operand_str)
@@ -196,6 +206,7 @@ class Assembler:
             return
 
         if directive in ('.WORD', '.ADDR'):
+            following_str = following_str.upper()
             operand_str = self._parse_numbers((''.join(following_str.split(';')[:1])).strip())
             unknown_names = set()
             for word in operand_str.split(','):
@@ -213,6 +224,51 @@ class Assembler:
                     ))
             return list(unknown_names)
 
+        if directive in ['.BYTE', '.BYT']:
+            operand_str = self._parse_numbers((''.join(following_str.split(';')[:1])).strip())
+
+            # First reduce string literals to decimal values
+            while (match := re.search(r'"(?:\\.|[^"\\])*"', operand_str)):
+                string_bytes = self._process_string_literal(match.group())
+                bytes_as_string = ','.join([f'{byte}' for byte in string_bytes]) + ','
+                operand_str = operand_str.replace(match.group(), bytes_as_string, 1)
+
+            # Then reduce all other expressions to decimal values
+            operand_str = self._parse_numbers(operand_str)
+
+            # Then remove whitespaces
+            operand_str = re.sub(r'[\s]+', '', operand_str).upper()
+
+            for byte in operand_str.split(','):
+                if not byte:
+                    continue
+
+                byte_value = self._get_value(byte)
+                if isinstance(byte_value, int) and -128 <= byte_value <= 0xff:
+                    self._add_bytes_to_code([byte_value & 0xff])
+                elif isinstance(byte_value, int):
+                    raise AssemblySyntaxError('Non-byte values provided.')
+                else:
+                    raise AssemblySyntaxError('.BYTE | .BYT only accepts constant operands')
+            return
+
+        if directive == '.ASCIIZ':
+            operand_str = ''.join(following_str.split(';')[:1]).strip()
+
+            # Ensure operand is a string literal or a comma-separated list of string literals
+            if not re.match(r'^"(?:\\.|[^"\\])*"([\s]*,[\s]*"(?:\\.|[^"\\])*")*$', operand_str):
+                raise AssemblySyntaxError(
+                    '.ASCIIZ directive only accepts comma-separated string literal operands'
+                )
+
+            string_bytes = []
+            for match in re.finditer(r'"(?:\\.|[^"\\])*"', operand_str):
+                string_bytes.extend(self._process_string_literal(match.group()))
+            self._add_bytes_to_code(string_bytes + [0])
+            return
+
+        raise AssemblySyntaxError(f'Unrecognized directive: {directive}')
+
     def _get_current_program_counter(self):
         return len(self._code_bytes.get(self._current_offset, [])) + self._current_offset
 
@@ -220,7 +276,7 @@ class Assembler:
         if not (-128 <= value1 <= 255 and -128 <= value2 <= 255):
             raise AssemblySyntaxError('Bitwise OR/XOR/AND/NOT only operate on 8-bit values')
 
-    def _eval_arithmetic(self, arith_string: str) -> (str, int):
+    def _eval_arithmetic(self, arith_string: str) -> str | int:
         """
         Using assembly operator precedence as defined in ca65's manual:
         https://cc65.github.io/doc/ca65.html#ss4.1
@@ -340,7 +396,7 @@ class Assembler:
 
         return int(arith_string)
 
-    def _get_value(self, value_string: str) -> (str, int):
+    def _get_value(self, value_string: str) -> str | int:
         # value_string should not contain any uppercase characters at this point
 
         # Substitute any named identifiers with their values
@@ -545,7 +601,7 @@ class Assembler:
             operand_value if isinstance(operand_value, str) else ''
         )
 
-    def _compile_line(self, asm_string: str) -> (None, list[str]):
+    def _compile_line(self, asm_string: str) -> None | list[str]:
         """
         "Tokenizes" a line of text and immediately attempts to compile it to bytes.
 
@@ -584,12 +640,13 @@ class Assembler:
             processed_string
         )
 
+        string_split = processed_string.split()
+
         # First check if symbols are being assigned
-        if '=' in processed_string:
+        if '=' in processed_string and not (sum(str_spl[0] == '.' for str_spl in string_split[:2])):
             self._process_symbol(*processed_string.strip().split('=', 1))
             return
 
-        string_split = processed_string.split()
 
         # Test if first token is potentially a label
         if string_split[0][-1] == ':':
@@ -605,7 +662,11 @@ class Assembler:
             # Pass the directive and original string following the directive
             self._process_directive(
                 string_split[0],
-                ''.join(asm_string.upper().split(string_split[0], 1)[1:])
+                re.search(
+                    f'(?<=\\{string_split[0]}).*',
+                    asm_string[:comment_index],
+                    re.IGNORECASE
+                ).group().strip()
             )
             return
 
@@ -623,8 +684,12 @@ class Assembler:
         self._symbols = {}
         unknowns = []
 
-        for line in asm_string.split('\n'):
-            unknowns.extend(self._compile_line(line) or [])
+        for i, line in enumerate(asm_string.split('\n')):
+            try:
+                unknowns.extend(self._compile_line(line) or [])
+            except AssemblySyntaxError as e:
+                print(f'Error on line {i+1}: {e}')
+                return bytes([])
 
         if unknowns:
             prev_code_bytes = {}
@@ -672,8 +737,14 @@ class Assembler:
             return self.assemble_from_string(file_handle.read())
 
     def assemble_from_file_and_output(self, src_filename: str, dst_filename: str) -> int:
-        with open(dst_filename, 'wb') as file_handle:
-            return file_handle.write(self.assemble_from_file(src_filename))
+        byte_code = self.assemble_from_file(src_filename)
+
+        if byte_code:
+            with open(dst_filename, 'wb') as file_handle:
+                return file_handle.write(byte_code)
+        else:
+            print('Assembly failed. No output file created.')
+            return 0
 
 INSTRUCTION_MAP = {
 #MNEMONIC: [ #  ,   a  ,   zp ,   Acc,   Imp, ($,X), ($),Y,  zp,X,   a,X,   a,Y,   r  ,   ($),  zp,Y]
