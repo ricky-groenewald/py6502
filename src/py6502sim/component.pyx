@@ -25,17 +25,30 @@ cdef class Component:
         self._size = size
         self._name = component_name
 
-    cpdef str get_name(self):
+    cdef inline str get_name(self):
         """
         Return component name
         """
         return self._name
 
-    cpdef unsigned int get_size(self):
+    cdef inline unsigned int get_size(self):
         """
         Return component address range size
         """
         return self._size
+
+    cdef void address_check(self, unsigned int address) except *:
+        """
+        Check if an address is within the component's address range
+
+        Arguments:
+            - address (unsigned int)
+        """
+        if not address < self._size:
+            raise AddressOutOfRange(
+                f'[{self._name}] Invalid address accessed: 0x{address:X}.'
+                f' Max address is: 0x{self._size - 1:X}.'
+            )
 
     cpdef unsigned char execute(self, unsigned int address, unsigned char data, bint read_write_bar) except *:
         """
@@ -49,11 +62,7 @@ cdef class Component:
         Returns:
             Byte value of the data bus after the instruction
         """
-        if not address < self._size:
-            raise AddressOutOfRange(
-                f'[{self._name}] Invalid address accessed: 0x{address:X}.'
-                f' Max address is: 0x{self._size - 1:X}.'
-            )
+        self.address_check(address)
 
         return self._read(address) if read_write_bar else self._write(address, data)
 

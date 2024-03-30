@@ -31,7 +31,7 @@ cdef class Memory(Component):
 
         self._read_only = read_only
 
-    def __dealloc__(self):
+    def __dealloc__(self) -> None:
         if self._data is not NULL:
             free(self._data)
 
@@ -81,15 +81,3 @@ cdef class Memory(Component):
 
         for i, byte in enumerate(data):
             self._data[i] = <unsigned char>byte
-
-    cpdef unsigned char read_addr(self, unsigned int address):
-        """
-        Reads a byte from the memory component at the specified address.
-
-        Arguments:
-            - address (unsigned int): Address to read from
-
-        Returns:
-            - unsigned char: Data read from the memory component
-        """
-        return self._read(address)
