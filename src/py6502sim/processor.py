@@ -4,8 +4,11 @@ Simulator definitions and functions for the main 6502 micro processor
 from py6502sim.component import Component
 
 # TODO:
+#   * [HIGH IMPORTANCE] Convert to Cython
 #   * [HIGH IMPORTANCE] TESTING!!
-#   * [OPTIMIZATION] Separate verbose / non-verbose into separate functions
+#   * [FEATURE] Add 65c02 instructions
+#   * [OPTIMIZATION] Remove verbosity and implement it in a different file
+#   * [OPTIMIZATION] Add get functions for registers
 #   * [OPTIMIZATION] Move stack PUSH/PULL commands to separate function?
 #   * [OPTIMIZATION] Better solution than "no_skip"?
 #   * [MISSING] Rewrite docstrings to reflect all cases of returns (e.g. step function + verbose)

@@ -1,7 +1,7 @@
 """
 Simulator definitions and functions for a component controller
 """
-from py6502sim.component import Component, InvalidData
+from py6502sim.component import Component
 
 class ComponentSizeError(Exception):
     """
@@ -41,7 +41,7 @@ class Controller(Component):
             address_start (int): Address offset where the controller should begin assigning
                 address space to the component
         """
-        address_end = component.get_max_address() + address_start
+        address_end = component.get_size() + address_start - 1
         if address_end > 0xffff:
             raise ComponentSizeError(
                 f'[{self._name}] Unable to fit {component.get_name()} in '
@@ -66,7 +66,7 @@ class Controller(Component):
         self._components.append((component, address_start, address_end))
         self._components.sort(key=lambda x: x[1])
 
-        for i in range(component.get_max_address() + 1):
+        for i in range(component.get_size()):
             self._component_address_map[address_start+i] = (component, i)
 
     def execute(self, address: int, data: int, read_write_bar: bool) -> int:
@@ -75,14 +75,11 @@ class Controller(Component):
         # Only do data checking since address checking is implicitly done through the address map
         # Also faster to reimplement the check here.
         if not 0x00 <= data <= 0xff:
-            raise InvalidData(f'[{self._name}] Invalid byte value obtained: 0x{data:02X}')
+            raise Exception(f'[{self._name}] Invalid byte value obtained: 0x{data:02X}')
 
         try:
             component, comp_addr = self._component_address_map[address]
-            return (
-                component.read(comp_addr) if read_write_bar
-                else component.write(comp_addr, data)
-            )
+            return component.execute(comp_addr, data, read_write_bar)
         except TypeError as exc:
             raise UnallocatedAddressError(
                 f'[{self._name}] Address not allocated to a component: 0x{address:04X}'

@@ -1,6 +1,12 @@
-.venv
-**/__pycache__/
-*.egg-info
-
 *.pyc
+*.pyd
+*.pyo
+__pycache__
+*.c
+*.so
+*.o
 
+*.egg
+*.egg-info
+.*cache*/
+*venv*/
