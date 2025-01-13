@@ -33,18 +33,16 @@ cdef class MOS6502:
         # Initialize internal and external variables
         self._memory_bus = memory_bus
         self._cycle_number = 0x00
-        self._current_op_code = 0x00
-        self._current_data = 0x00
-        self._current_address = 0x00FF # Default address at reset
-        self._write_buffer = 0x00
-        self._write_buffer_flag = False
+        self._temp_data = 0x00
+        self._temp_address = 0x0000
         self._interrupt_flag = 0 # 0 = None, 1 = IRQ, 2 = NMI, 3 = RESET
 
-        # Initialize registers
+        # Initialize registers with RESET values
+        self._registers.OPCODE = 0x00
         self._registers.ACC = 0x00
         self._registers.X = 0x00
         self._registers.Y = 0x00
-        self._registers.PC = 0x0000
+        self._registers.PC = 0x00FF
         self._registers.S = 0x00
         self._registers.P = 0b00110100
         # Status Register (P) reference:
@@ -63,7 +61,11 @@ cdef class MOS6502:
         self._next_instruction = NULL
 
         # Define OPCODE instruction functions
+        # TODO: Implement OPCODE instruction function map
 
+    ###
+    #   CONTROL FUNCTIONS
+    ###
     cdef void clock(self):
         if self._current_instruction is not NULL:
             self._current_instruction(self)
@@ -72,30 +74,166 @@ cdef class MOS6502:
         else:
             self.load_op_code()
 
-    cdef void load_op_code(self) except *:
-        self._current_op_code = self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = self._instructions[self._current_op_code][0]
-        self._next_instruction = self._instructions[self._current_op_code][1]
-
-        if self._current_instruction is NULL:
-            raise InvalidOPCode(f'Invalid OPCODE: 0x{self._current_op_code:02X}')
-
-        self._registers.PC += 1
-        self._cycle_number = 1
-
     cdef void send_reset(self):
+        # TODO: Implement reset logic
         print(f'Sending reset to the processor')
 
     cdef void send_irq(self):
+        # TODO: Implement IRQ logic
         print(f'Sending IRQ to the processor')
 
     cdef void send_nmi(self):
+        # TODO: Implement NMI logic
         print(f'Sending NMI to the processor')
 
+    cdef void handle_interrupt(self):
+        # TODO: Implement interrupt logic
+        print(f'Handling interrupt')
+
+    cdef void load_op_code(self) except *:
+        self._registers.OPCODE = self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = self._instructions[self._registers.OPCODE][0]
+        self._next_instruction = self._instructions[self._registers.OPCODE][1]
+
+        if self._current_instruction is NULL:
+            raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
+
+        self._cycle_number = 0
+
+    ###
+    #   ADDRESSING MODES
+    ###
+    cdef void absolute(self):
+        self._registers.PC += 1
+        if not self._cycle_number:
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        else:
+            self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8)
+            self._cycle_number = 0
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+
+    cdef void absolute_x(self):
+        self._registers.PC += 1
+        if not self._cycle_number:
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        else:
+            self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8)
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+
+            if (self._registers.X + self._temp_address) & 0xFF00 == self._temp_address & 0xFF00:
+                self._cycle_number = 0 # No page cross, 1 otherwise
+
+            self._temp_address += self._registers.X
+
+    cdef void absolute_y(self):
+        self._registers.PC += 1
+        if not self._cycle_number:
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        else:
+            self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8)
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+
+            if (self._registers.Y + self._temp_address) & 0xFF00 == self._temp_address & 0xFF00:
+                self._cycle_number = 0 # No page cross, 1 otherwise
+
+            self._temp_address += self._registers.Y
+
+    cdef void immediate(self): # Also handles relative addressing
+        self._registers.PC += 1
+        self._temp_address = self._registers.PC
+        self._current_instruction, self._next_instruction = self._next_instruction, NULL
+        self._cycle_number = 0
+        self._current_instruction(self)
+
+    cdef void indirect_x(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._temp_data = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(self._temp_data, 0, 1) # Discard data
+            self._cycle_number += 1
+        elif self._cycle_number == 2:
+            self._temp_address = self._memory_bus.execute(
+                (self._temp_data + self._registers.X) & 0xFF,
+                0,
+                1
+            )
+            self._cycle_number += 1
+        else:
+            self._temp_address |= (
+                self._memory_bus.execute(
+                    (self._temp_data + self._registers.X + 1) & 0xFF,
+                    0,
+                    1
+                ) << 8
+            )
+            self._cycle_number = 0
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+
+    cdef void indirect_y(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._temp_data = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._temp_address = self._memory_bus.execute(
+                self._temp_data,
+                0,
+                1
+            )
+            self._cycle_number += 1
+        else:
+            self._temp_address |= (
+                self._memory_bus.execute(
+                    (self._temp_data + 1) & 0xFF,
+                    0,
+                    1
+                ) << 8
+            )
+
+            if (self._registers.Y + self._temp_address) & 0xFF00 == self._temp_address & 0xFF00:
+                self._cycle_number = 0 # No page cross, 2 otherwise
+
+            self._temp_address += self._registers.Y
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+
+    cdef void zero_page(self):
+        self._registers.PC += 1
+        self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction, self._next_instruction = self._next_instruction, NULL
+        self._cycle_number = 0
+
+    cdef void zero_page_x(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        else:
+            self._memory_bus.execute(self._temp_address, 0, 1) # Discard data
+            self._temp_address = (self._temp_address + self._registers.X) & 0xFF
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+            self._cycle_number = 0
+
+    cdef void zero_page_y(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        else:
+            self._memory_bus.execute(self._temp_address, 0, 1) # Discard data
+            self._temp_address = (self._temp_address + self._registers.Y) & 0xFF
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+            self._cycle_number = 0
+
+    ###
+    #   GETTERS AND SETTERS
+    ###
     cpdef Registers get_registers(self):
         return self._registers
-
-
 
     cpdef unsigned char get_current_op_code(self):
         return self._current_op_code
