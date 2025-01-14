@@ -27,10 +27,11 @@ cdef class MOS6502:
     cdef unsigned char _temp_data
     cdef unsigned short _temp_address
     cdef unsigned char _interrupt_flag
-    cdef unsigned short _arithmetic_result # Define once, use many times
     cdef bint _page_cross_possible
     cdef bint _page_cross_occurred
     cdef bint _accumulator_addressing
+    cdef unsigned short _arithmetic_result
+    cdef signed char _branch_offset
 
     # Instruction function references
     cdef instruction_func[256][2] _instructions
@@ -62,16 +63,16 @@ cdef class MOS6502:
     # cdef void ADC_SBC_BCD(self)
     cdef void AND(self)
     cdef void ASL(self)
-    # cdef void BCC(self)
-    # cdef void BCS(self)
-    # cdef void BEQ(self)
-    # cdef void BIT(self)
-    # cdef void BMI(self)
-    # cdef void BNE(self)
-    # cdef void BPL(self)
+    cdef void BCC(self)
+    cdef void BCS(self)
+    cdef void BEQ(self)
+    cdef void BIT(self)
+    cdef void BMI(self)
+    cdef void BNE(self)
+    cdef void BPL(self)
     # cdef void BRK(self)
-    # cdef void BVC(self)
-    # cdef void BVS(self)
+    cdef void BVC(self)
+    cdef void BVS(self)
     # cdef void CLC(self)
     # cdef void CLD(self)
     # cdef void CLI(self)

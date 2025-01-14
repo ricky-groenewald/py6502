@@ -36,7 +36,11 @@ cdef class MOS6502:
         self._temp_data = 0x00
         self._temp_address = 0x0000
         self._interrupt_flag = 0 # 0 = None, 1 = IRQ, 2 = NMI, 3 = RESET
+        self._page_cross_possible = False
+        self._page_cross_occurred = False
+        self._accumulator_addressing = False
         self._arithmetic_result = 0x0000
+        self._branch_offset = 0x00
 
         # Initialize registers with RESET values
         self._registers.OPCODE = 0x00
@@ -285,7 +289,7 @@ cdef class MOS6502:
         # Set negative flag
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if self._arithmetic_result & 0x80
+            if self._arithmetic_result & NEGATIVE_FLAG
             else self._registers.P & ~NEGATIVE_FLAG
         )
 
@@ -321,7 +325,7 @@ cdef class MOS6502:
 
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if self._registers.ACC & 0x80
+            if self._registers.ACC & NEGATIVE_FLAG
             else self._registers.P & ~NEGATIVE_FLAG
         )
         self._current_instruction = NULL
@@ -382,12 +386,222 @@ cdef class MOS6502:
             )
             self._registers.P = (
                 self._registers.P | NEGATIVE_FLAG
-                if self._temp_data & 0x80
+                if self._temp_data & NEGATIVE_FLAG
                 else self._registers.P & ~NEGATIVE_FLAG
             )
 
             self._current_instruction = NULL
             self._registers.PC += 1
+
+    cdef void BCC(self):
+        if not (self._registers.P & CARRY_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    cdef void BCS(self):
+        if (self._registers.P & CARRY_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    cdef void BEQ(self):
+        if (self._registers.P & ZERO_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    cdef void BIT(self):
+        self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1) & self._registers.ACC
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._temp_data
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._temp_data & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P & ~OVERFLOW_FLAG
+            if self._temp_data & OVERFLOW_FLAG
+            else self._registers.P | OVERFLOW_FLAG
+        )
+
+        self._current_instruction = NULL
+        self._registers.PC += 1
+
+    cdef void BMI(self):
+        if (self._registers.P & NEGATIVE_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    cdef void BNE(self):
+        if not (self._registers.P & ZERO_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    cdef void BPL(self):
+        if not (self._registers.P & NEGATIVE_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    # cdef void BRK(self):
+    #     pass
+
+    cdef void BVC(self):
+        if not (self._registers.P & OVERFLOW_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
+
+    cdef void BVS(self):
+        if (self._registers.P & OVERFLOW_FLAG):
+            if not self._cycle_number:
+                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+                self._temp_address += self._branch_offset + 1
+                self._memory_bus.execute(
+                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
+                    0,
+                    1
+                )
+                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                    self._cycle_number = 1
+
+                self._registers.PC = self._temp_address
+                return
+            else:
+                self._memory_bus.execute(self._registers.PC, 0, 1)
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.PC += 1
+
+        self._current_instruction = NULL
 
     ###
     #   GETTERS AND SETTERS
