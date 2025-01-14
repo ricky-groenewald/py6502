@@ -53,7 +53,8 @@ cdef class MOS6502:
     cdef void zero_page_y(self)
 
     # # Opcode functions
-    # cdef void ADC(self)
+    cdef void ADC_SBC(self)
+    cdef void ADC_SBC_BCD(self)
     # cdef void AND(self)
     # cdef void ASL(self)
     # cdef void BCC(self)
@@ -96,7 +97,6 @@ cdef class MOS6502:
     # cdef void ROR(self)
     # cdef void RTI(self)
     # cdef void RTS(self)
-    # cdef void SBC(self)
     # cdef void SEC(self)
     # cdef void SED(self)
     # cdef void SEI(self)

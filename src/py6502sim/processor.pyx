@@ -98,10 +98,14 @@ cdef class MOS6502:
         if self._current_instruction is NULL:
             raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
 
-        self._cycle_number = 0
+        self._cycle_number = 0 # Reset cycle number (Read Addressing Mode notes)
 
     ###
     #   ADDRESSING MODES
+    #
+    #   Note: Cycle number expects to start and end at 0 for each addressing mode. The final
+    #   cycle number only ends on a non-zero value if a page cross occured during certain addressing
+    #   modes that involve the X or Y register.
     ###
     cdef void absolute(self):
         self._registers.PC += 1
@@ -228,6 +232,59 @@ cdef class MOS6502:
             self._temp_address = (self._temp_address + self._registers.Y) & 0xFF
             self._current_instruction, self._next_instruction = self._next_instruction, NULL
             self._cycle_number = 0
+
+    ###
+    #   OPCODE FUNCTIONS
+    #
+    #   Note: For expected cycle numbers, see Addressing Mode notes.
+    ###
+    cdef void ADC_SBC(self):
+        self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
+
+        if (self._registers.OPCODE & 0x80): # SBC opcodes have bit 7 set
+            self._temp_data ^= 0xff # Invert for subtraction
+
+        cdef unsigned short result = (
+            self._registers.ACC + self._temp_data + (1 if self._registers.P & CARRY_FLAG else 0)
+        )
+
+        # Set carry flag
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if result >> 8
+            else self._registers.P & ~CARRY_FLAG
+        )
+
+        result &= 0xff
+
+        # Set zero flag
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if result
+            else self._registers.P | ZERO_FLAG
+        )
+
+        # Set overflow flag
+        self._registers.P = (
+            self._registers.P | OVERFLOW_FLAG
+            if ((self._registers.ACC ^ result) & (self._temp_data ^ result) & 0x80)
+            else self._registers.P & ~OVERFLOW_FLAG
+        )
+
+        # Set negative flag
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if result & 0x80
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._registers.ACC = result
+        self._current_instruction = NULL
+        self._registers.PC += 1
+
+    # I hate BCD so much!
+    cdef void ADC_SBC_BCD(self):
+        pass
 
     ###
     #   GETTERS AND SETTERS
