@@ -28,6 +28,9 @@ cdef class MOS6502:
     cdef unsigned short _temp_address
     cdef unsigned char _interrupt_flag
     cdef unsigned short _arithmetic_result # Define once, use many times
+    cdef bint _page_cross_possible
+    cdef bint _page_cross_occurred
+    cdef bint _accumulator_addressing
 
     # Instruction function references
     cdef instruction_func[256][2] _instructions
@@ -36,16 +39,17 @@ cdef class MOS6502:
 
     # Control Functions
     cdef void clock(self)
-    cdef void send_reset(self)
-    cdef void send_irq(self)
-    cdef void send_nmi(self)
-    cdef void handle_interrupt(self)
+    # cdef void send_reset(self)
+    # cdef void send_irq(self)
+    # cdef void send_nmi(self)
+    # cdef void handle_interrupt(self)
     cdef void load_op_code(self)
 
     # Addressing Modes
     cdef void absolute(self)
     cdef void absolute_x(self)
     cdef void absolute_y(self)
+    cdef void accumulator(self)
     cdef void immediate(self) # Also handles relative addressing
     cdef void indirect_x(self)
     cdef void indirect_y(self)
@@ -55,9 +59,9 @@ cdef class MOS6502:
 
     # # Opcode functions
     cdef void ADC_SBC(self)
-    cdef void ADC_SBC_BCD(self)
-    # cdef void AND(self)
-    # cdef void ASL(self)
+    # cdef void ADC_SBC_BCD(self)
+    cdef void AND(self)
+    cdef void ASL(self)
     # cdef void BCC(self)
     # cdef void BCS(self)
     # cdef void BEQ(self)

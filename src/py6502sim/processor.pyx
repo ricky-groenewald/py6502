@@ -75,21 +75,17 @@ cdef class MOS6502:
         else:
             self.load_op_code()
 
-    cdef void send_reset(self):
-        # TODO: Implement reset logic
-        print(f'Sending reset to the processor')
+    # cdef void send_reset(self):
+    #     print(f'Sending reset to the processor')
 
-    cdef void send_irq(self):
-        # TODO: Implement IRQ logic
-        print(f'Sending IRQ to the processor')
+    # cdef void send_irq(self):
+    #     print(f'Sending IRQ to the processor')
 
-    cdef void send_nmi(self):
-        # TODO: Implement NMI logic
-        print(f'Sending NMI to the processor')
+    # cdef void send_nmi(self):
+    #     print(f'Sending NMI to the processor')
 
-    cdef void handle_interrupt(self):
-        # TODO: Implement interrupt logic
-        print(f'Handling interrupt')
+    # cdef void handle_interrupt(self):
+    #     print(f'Handling interrupt')
 
     cdef void load_op_code(self) except *:
         self._registers.OPCODE = self._memory_bus.execute(self._registers.PC, 0, 1)
@@ -99,14 +95,10 @@ cdef class MOS6502:
         if self._current_instruction is NULL:
             raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
 
-        self._cycle_number = 0 # Reset cycle number (Read Addressing Mode notes)
+        self._cycle_number = 0
 
     ###
     #   ADDRESSING MODES
-    #
-    #   Note: Cycle number expects to start and end at 0 for each addressing mode. The final
-    #   cycle number only ends on a non-zero value if a page cross occured during certain addressing
-    #   modes that involve the X or Y register.
     ###
     cdef void absolute(self):
         self._registers.PC += 1
@@ -126,10 +118,12 @@ cdef class MOS6502:
         else:
             self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8)
             self._current_instruction, self._next_instruction = self._next_instruction, NULL
+            self._page_cross_possible = True
 
-            if (self._registers.X + self._temp_address) & 0xFF00 == self._temp_address & 0xFF00:
-                self._cycle_number = 0 # No page cross, 1 otherwise
+            if (self._registers.X + self._temp_address) & 0xFF00 != self._temp_address & 0xFF00:
+                self._page_cross_occurred = True
 
+            self._cycle_number = 0
             self._temp_address += self._registers.X
 
     cdef void absolute_y(self):
@@ -140,17 +134,25 @@ cdef class MOS6502:
         else:
             self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8)
             self._current_instruction, self._next_instruction = self._next_instruction, NULL
+            self._page_cross_possible = True
 
-            if (self._registers.Y + self._temp_address) & 0xFF00 == self._temp_address & 0xFF00:
-                self._cycle_number = 0 # No page cross, 1 otherwise
+            if (self._registers.Y + self._temp_address) & 0xFF00 != self._temp_address & 0xFF00:
+                self._page_cross_occurred = True
 
+            self._cycle_number = 0
             self._temp_address += self._registers.Y
+
+    cdef void accumulator(self):
+        self._registers.PC += 1
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._accumulator_addressing = True
+        self._current_instruction, self._next_instruction = self._next_instruction, NULL
+        self._current_instruction(self)
 
     cdef void immediate(self): # Also handles relative addressing
         self._registers.PC += 1
         self._temp_address = self._registers.PC
         self._current_instruction, self._next_instruction = self._next_instruction, NULL
-        self._cycle_number = 0
         self._current_instruction(self)
 
     cdef void indirect_x(self):
@@ -199,10 +201,12 @@ cdef class MOS6502:
                     1
                 ) << 8
             )
+            self._page_cross_possible = True
 
-            if (self._registers.Y + self._temp_address) & 0xFF00 == self._temp_address & 0xFF00:
-                self._cycle_number = 0 # No page cross, 2 otherwise
+            if (self._registers.Y + self._temp_address) & 0xFF00 != self._temp_address & 0xFF00:
+                self._page_cross_occurred = True
 
+            self._cycle_number = 0
             self._temp_address += self._registers.Y
             self._current_instruction, self._next_instruction = self._next_instruction, NULL
 
@@ -236,10 +240,16 @@ cdef class MOS6502:
 
     ###
     #   OPCODE FUNCTIONS
-    #
-    #   Note: For expected cycle numbers, see Addressing Mode notes.
     ###
     cdef void ADC_SBC(self):
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            if self._page_cross_occurred:
+                self._memory_bus.execute(self._temp_address, 0, 1)
+                self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
         self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
 
         if (self._registers.OPCODE & 0x80): # SBC opcodes have bit 7 set
@@ -284,8 +294,100 @@ cdef class MOS6502:
         self._registers.PC += 1
 
     # I hate BCD so much!
-    cdef void ADC_SBC_BCD(self):
-        pass
+    # cdef void ADC_SBC_BCD(self):
+        # if self._page_cross_possible:
+        #     # Run a discarding cycle if a page cross occured
+        #     if self._page_cross_occurred:
+        #         self._memory_bus.execute(self._temp_address, 0, 1)
+        #         self._page_cross_occurred = False
+        #     self._page_cross_possible = False
+        #     return
+
+    cdef void AND(self):
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            if self._page_cross_occurred:
+                self._memory_bus.execute(self._temp_address, 0, 1)
+                self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
+        self._registers.ACC &= self._memory_bus.execute(self._temp_address, 0, 1)
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & 0x80
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+        self._current_instruction = NULL
+        self._registers.PC += 1
+
+    cdef void ASL(self):
+        if self._accumulator_addressing:
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._registers.ACC & 0x80
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._registers.ACC <<= 1
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & 0x80
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._accumulator_addressing = False
+            self._current_instruction = NULL
+            return
+
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            self._memory_bus.execute(self._temp_address, 0, 1)
+            self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(self._temp_address, self._temp_data, 0)
+            self._cycle_number = 2
+        else:
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x80
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data <<= 1
+            self._memory_bus.execute(self._temp_address, self._temp_data, 0)
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._temp_data
+                else self._registers.P | ZERO_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._temp_data & 0x80
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._current_instruction = NULL
+            self._registers.PC += 1
 
     ###
     #   GETTERS AND SETTERS
