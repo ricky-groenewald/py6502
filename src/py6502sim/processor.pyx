@@ -36,6 +36,7 @@ cdef class MOS6502:
         self._temp_data = 0x00
         self._temp_address = 0x0000
         self._interrupt_flag = 0 # 0 = None, 1 = IRQ, 2 = NMI, 3 = RESET
+        self._arithmetic_result = 0x0000
 
         # Initialize registers with RESET values
         self._registers.OPCODE = 0x00
@@ -244,41 +245,41 @@ cdef class MOS6502:
         if (self._registers.OPCODE & 0x80): # SBC opcodes have bit 7 set
             self._temp_data ^= 0xff # Invert for subtraction
 
-        cdef unsigned short result = (
+        self._arithmetic_result = (
             self._registers.ACC + self._temp_data + (1 if self._registers.P & CARRY_FLAG else 0)
         )
 
         # Set carry flag
         self._registers.P = (
             self._registers.P | CARRY_FLAG
-            if result >> 8
+            if self._arithmetic_result >> 8
             else self._registers.P & ~CARRY_FLAG
         )
 
-        result &= 0xff
+        self._arithmetic_result &= 0xff
 
         # Set zero flag
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
-            if result
+            if self._arithmetic_result
             else self._registers.P | ZERO_FLAG
         )
 
         # Set overflow flag
         self._registers.P = (
             self._registers.P | OVERFLOW_FLAG
-            if ((self._registers.ACC ^ result) & (self._temp_data ^ result) & 0x80)
+            if ((self._registers.ACC ^ self._arithmetic_result) & (self._temp_data ^ self._arithmetic_result) & 0x80)
             else self._registers.P & ~OVERFLOW_FLAG
         )
 
         # Set negative flag
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if result & 0x80
+            if self._arithmetic_result & 0x80
             else self._registers.P & ~NEGATIVE_FLAG
         )
 
-        self._registers.ACC = result
+        self._registers.ACC = self._arithmetic_result
         self._current_instruction = NULL
         self._registers.PC += 1
 

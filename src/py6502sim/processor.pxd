@@ -27,6 +27,7 @@ cdef class MOS6502:
     cdef unsigned char _temp_data
     cdef unsigned short _temp_address
     cdef unsigned char _interrupt_flag
+    cdef unsigned short _arithmetic_result # Define once, use many times
 
     # Instruction function references
     cdef instruction_func[256][2] _instructions
