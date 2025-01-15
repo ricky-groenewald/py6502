@@ -62,9 +62,10 @@ cdef class MOS6502:
 
         # Initialize instruction functions
         memset(&self._instructions[0][0], 0, sizeof(instruction_func) * 256 * 2)
-        self._current_instruction = &MOS6502.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
         self._next_instruction = NULL
 
+        # For reference when setting/clearing BCD opcodes
         self._adc_sbc_opcodes[:] = [
                 0x69, 0x6D, 0x65, 0x61, 0x71, 0x75, 0x7D, 0x79,
                 0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
@@ -77,13 +78,15 @@ cdef class MOS6502:
     #   CONTROL FUNCTIONS
     ###
     cdef void clock(self):
-        if self._current_instruction is not NULL:
+        if self._current_instruction:
             self._current_instruction(self)
-        elif self._incoming_interrupt_flag:
-            self._registers.PC += 1
+            return
+
+        # Always increment PC if no instruction is loaded
+        self._registers.PC += 1
+        if self._incoming_interrupt_flag:
             self.handle_interrupt()
         else:
-            self._registers.PC += 1
             self.load_op_code()
 
     # cdef void send_reset(self):
@@ -110,21 +113,19 @@ cdef class MOS6502:
         # We don't update the PC here, as we need to keep the registers consistent
         # with its value during the entire cycle
 
-    # cdef void clear_decimal_mode(self):
-    #     self._registers.P &= ~DECIMAL_MODE_FLAG
-
+    # cdef void clear_bcd_opcodes(self):
     #     # Change all ADC and SBC opcodes back to normal
-    #     # For NES implementations, remove this FOR loop, but keep the flag update above
+    #     # For NES implementations, remove this FOR loop
     #     for opcode in self._adc_sbc_opcodes:
-    #         self._instructions[opcode][1] = &self.ADC_SBC
+    #         self._instructions[opcode][1] = &MOS6502.ADC_SBC
+    #     # pass
 
-    # cdef void set_decimal_mode(self):
-    #     self._registers.P |= DECIMAL_MODE_FLAG
-
+    # cdef void set_bcd_opcodes(self):
     #     # Change all ADC and SBC opcodes to use BCD version
-    #     # For NES implementations, remove this FOR loop, but keep the flag update above
+    #     # For NES implementations, remove this FOR loop
     #     for opcode in self._adc_sbc_opcodes:
-    #         self._instructions[opcode][1] = &self.ADC_SBC_BCD
+    #         self._instructions[opcode][1] = &MOS6502.ADC_SBC_BCD
+    #     # pass
 
     ###
     #   ADDRESSING MODES
@@ -438,12 +439,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BCS(self):
         if not self._cycle_number:
@@ -462,12 +463,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BEQ(self):
         if not self._cycle_number:
@@ -486,12 +487,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BIT(self):
         self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1) & self._registers.ACC
@@ -532,12 +533,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BNE(self):
         if not self._cycle_number:
@@ -556,12 +557,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BPL(self):
         if not self._cycle_number:
@@ -580,12 +581,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     # cdef void BRK(self):
     #     pass
@@ -607,12 +608,12 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BVS(self):
         if not self._cycle_number:
@@ -631,20 +632,21 @@ cdef class MOS6502:
             if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
                 self._cycle_number = 2
             else:
-                self._current_instruction = &self.load_op_code
+                self._current_instruction = &MOS6502.load_op_code # prevent PC increment
             return
 
         self._registers.PC = self._temp_address
         self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = &self.load_op_code
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void CLC(self):
         self._registers.P &= ~CARRY_FLAG
         self._current_instruction = NULL
 
-    # cdef void CLD(self):
-    #     self.clear_decimal_mode()
-    #     self._current_instruction = NULL
+    cdef void CLD(self):
+        self._registers.P &= ~DECIMAL_MODE_FLAG
+        self.clear_bcd_opcodes()
+        self._current_instruction = NULL
 
     cdef void CLI(self):
         self._registers.P &= ~IRQ_DISABLE_FLAG
@@ -737,13 +739,17 @@ cdef class MOS6502:
 
         self._current_instruction = NULL
 
+    cdef void NOP(self):
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
     cdef void SEC(self):
         self._registers.P |= CARRY_FLAG
         self._current_instruction = NULL
 
-    # cdef void SED(self):
-    #     self.set_decimal_mode()
-    #     self._current_instruction = NULL
+    cdef void SED(self):
+        self._registers.P |= DECIMAL_MODE_FLAG
+        self.set_bcd_opcodes()
+        self._current_instruction = NULL
 
     cdef void SEI(self):
         self._registers.P |= IRQ_DISABLE_FLAG
