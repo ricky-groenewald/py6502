@@ -7,6 +7,8 @@ ctypedef void (*instruction_func)(MOS6502)
 
 cdef struct Registers:
     unsigned char OPCODE # Not a real register, but used for debugging
+    unsigned char INTERRUPT_TYPE # Not a real register, but used for debugging
+                                 # 0 = None/BRK, 1 = IRQ, 2 = RESET, 3 = NMI
     unsigned char ACC
     unsigned char X
     unsigned char Y
@@ -26,7 +28,6 @@ cdef class MOS6502:
     cdef unsigned char _cycle_number
     cdef unsigned char _temp_data
     cdef unsigned short _temp_address
-    cdef unsigned char _incoming_interrupt_flag
     cdef bint _page_cross_possible
     cdef bint _page_cross_occurred
     cdef bint _accumulator_addressing
@@ -44,7 +45,6 @@ cdef class MOS6502:
     # cdef void send_reset(self)
     # cdef void send_irq(self)
     # cdef void send_nmi(self)
-    # cdef void handle_interrupt(self)
     cdef void load_op_code(self)
     # cdef void clear_bcd_opcodes(self)
     # cdef void set_bcd_opcodes(self)
@@ -56,6 +56,7 @@ cdef class MOS6502:
     cdef void accumulator(self)
     cdef void immediate(self) # Also handles relative addressing
     cdef void implied(self)
+    cdef void indirect(self)
     cdef void indirect_x(self)
     cdef void indirect_y(self)
     cdef void zero_page(self)
@@ -74,7 +75,7 @@ cdef class MOS6502:
     cdef void BMI(self)
     cdef void BNE(self)
     cdef void BPL(self)
-    # cdef void BRK(self)
+    cdef void BRK(self)
     cdef void BVC(self)
     cdef void BVS(self)
     cdef void CLC(self)
@@ -91,8 +92,8 @@ cdef class MOS6502:
     cdef void INC(self)
     cdef void INX(self)
     cdef void INY(self)
-    # cdef void JMP(self)
-    # cdef void JSR(self)
+    cdef void JMP(self)
+    cdef void JSR(self)
     cdef void LDA(self)
     cdef void LDX(self)
     cdef void LDY(self)
@@ -105,8 +106,8 @@ cdef class MOS6502:
     cdef void PLP(self)
     cdef void ROL(self)
     cdef void ROR(self)
-    # cdef void RTI(self)
-    # cdef void RTS(self)
+    cdef void RTI(self)
+    cdef void RTS(self)
     cdef void SEC(self)
     cdef void SED(self)
     cdef void SEI(self)

@@ -13,7 +13,8 @@ DEF CARRY_FLAG = 0b00000001
 DEF ZERO_FLAG = 0b00000010
 DEF IRQ_DISABLE_FLAG = 0b00000100
 DEF DECIMAL_MODE_FLAG = 0b00001000
-DEF BRK_FLAG = 0b00010000
+DEF BREAK_FLAG = 0b00010000
+DEF UNUSED_FLAG = 0b00100000
 DEF OVERFLOW_FLAG = 0b01000000
 DEF NEGATIVE_FLAG = 0b10000000
 
@@ -35,7 +36,6 @@ cdef class MOS6502:
         self._cycle_number = 0x00
         self._temp_data = 0x00
         self._temp_address = 0x0000
-        self._incoming_interrupt_flag = 0 # 0 = None, 1 = IRQ, 2 = NMI, 3 = RESET
         self._page_cross_possible = False
         self._page_cross_occurred = False
         self._accumulator_addressing = False
@@ -44,6 +44,7 @@ cdef class MOS6502:
 
         # Initialize registers with RESET values
         self._registers.OPCODE = 0x00
+        self._registers.INTERRUPT_TYPE = 0x00 # 0 = None/BRK, 1 = IRQ, 2 = RESET, 3 = NMI
         self._registers.ACC = 0x00
         self._registers.X = 0x00
         self._registers.Y = 0x00
@@ -80,13 +81,9 @@ cdef class MOS6502:
     cdef void clock(self):
         if self._current_instruction:
             self._current_instruction(self)
-            return
-
-        # Always increment PC if no instruction is loaded
-        self._registers.PC += 1
-        if self._incoming_interrupt_flag:
-            self.handle_interrupt()
         else:
+            # Always increment PC if no instruction is loaded
+            self._registers.PC += 1
             self.load_op_code()
 
     # cdef void send_reset(self):
@@ -102,12 +99,16 @@ cdef class MOS6502:
     #     print(f'Handling interrupt')
 
     cdef void load_op_code(self) except *:
-        self._registers.OPCODE = self._memory_bus.execute(self._registers.PC, 0, 1)
-        self._current_instruction = self._instructions[self._registers.OPCODE][0]
-        self._next_instruction = self._instructions[self._registers.OPCODE][1]
-
-        if self._current_instruction is NULL:
-            raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
+        if self._registers.INTERRUPT_TYPE:
+            self._registers.OPCODE = 0x00
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._current_instruction, self._next_instruction = &MOS6502.BRK, NULL
+        else:
+            self._registers.OPCODE = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._current_instruction = self._instructions[self._registers.OPCODE][0]
+            self._next_instruction = self._instructions[self._registers.OPCODE][1]
+            if self._current_instruction is NULL:
+                raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
 
         self._cycle_number = 0
         # We don't update the PC here, as we need to keep the registers consistent
@@ -190,6 +191,26 @@ cdef class MOS6502:
         self._memory_bus.execute(self._registers.PC, 0, 1)
         self._current_instruction, self._next_instruction = self._next_instruction, NULL
         self._current_instruction(self)
+
+    cdef void indirect(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1) # IAL
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._registers.PC += 1
+            self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8) # IAH, IAL
+            self._cycle_number = 2
+        elif self._cycle_number == 2:
+            self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1) # ADL
+            self._cycle_number = 3
+        else:
+            # Add 1 to the absolute address to get the high byte, but keep the page the same
+            self._temp_address = (self._temp_address & 0xFF00) | ((self._temp_address + 1) & 0xFF) # Not a bug
+
+            self._temp_address = (self._memory_bus.execute(self._temp_address, 0, 1) << 8) | self._temp_data # ADH, ADL
+            self._current_instruction, self._next_instruction = self._next_instruction, NULL
+            self._cycle_number = 0
 
     cdef void indirect_x(self):
         if not self._cycle_number:
@@ -588,8 +609,67 @@ cdef class MOS6502:
         self._memory_bus.execute(self._registers.PC, 0, 1)
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
-    # cdef void BRK(self):
-    #     pass
+    cdef void BRK(self):
+        if not self._cycle_number:
+            self._temp_data = BREAK_FLAG
+            if not self._registers.INTERRUPT_TYPE:
+                self._temp_data = 0x00 # Only BRK set B flag to 1
+                self._registers.PC += 1
+                if self._registers.INTERRUPT_TYPE == 2: # RESET
+                    self._registers.PC = 0x00FF
+                    self._registers.S = 0x00
+
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(
+                0x100 | self._registers.S,
+                self._registers.PC >> 8,
+                1 if self._registers.INTERRUPT_TYPE == 2 else 0
+            )
+            self._registers.S -= 1
+            self._cycle_number = 2
+        elif self._cycle_number == 2:
+            self._memory_bus.execute(
+                0x100 | self._registers.S,
+                self._registers.PC & 0xFF,
+                1 if self._registers.INTERRUPT_TYPE == 2 else 0
+            )
+            self._registers.S -= 1
+            self._cycle_number = 3
+        elif self._cycle_number == 3:
+            self._registers.P |= UNUSED_FLAG
+            self._registers.P &= ~BREAK_FLAG
+            self._memory_bus.execute(
+                0x100 | self._registers.S,
+                self._registers.P | self._temp_data,
+                1 if self._registers.INTERRUPT_TYPE == 2 else 0
+            )
+            self._registers.S -= 1
+            self._registers.P |= IRQ_DISABLE_FLAG | BREAK_FLAG
+            self._registers.P &= ~DECIMAL_MODE_FLAG
+            self._cycle_number = 4
+        elif self._cycle_number == 4:
+            if self._registers.INTERRUPT_TYPE:
+                self._registers.INTERRUPT_TYPE -= 1 # Force 0 = IRQ/BRK, 1 = RESET, 2 = NMI
+
+            # Read ADL at 0xFFFE for IRQ/BRK, 0xFFFA for NMI, 0xFFFC for RESET
+            self._registers.PC = 0xFFFE - (2 * self._registers.INTERRUPT_TYPE)
+
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 5
+        elif self._cycle_number == 5:
+            # Read ADH at 0xFFFF for IRQ/BRK, 0xFFFB for NMI, 0xFFFD for RESET
+            self._registers.PC += 1
+            self._temp_address |= self._memory_bus.execute(self._registers.PC, 0, 1) << 8
+            self._cycle_number = 6
+        else:
+            self._registers.PC = self._temp_address
+            if self._next_instruction: # In case a higher priority interrupt occurs
+                self._registers.INTERRUPT_TYPE = self._arithmetic_result # This variable will hold the higher priority interrupt type
+            else:
+                self._registers.INTERRUPT_TYPE = 0x00
+            self.load_op_code()
 
     cdef void BVC(self):
         if not self._cycle_number:
@@ -892,11 +972,33 @@ cdef class MOS6502:
 
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
-    # cdef void JMP(self):
-    #     pass
+    cdef void JMP(self):
+        self._registers.PC = self._temp_address
+        self.load_op_code()
 
-    # cdef void JSR(self):
-    #     pass
+    cdef void JSR(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._registers.PC += 1
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 2
+        elif self._cycle_number == 2:
+            self._memory_bus.execute(0x100 | self._registers.S, self._registers.PC >> 8, 0)
+            self._registers.S -= 1
+            self._cycle_number = 3
+        elif self._cycle_number == 3:
+            self._memory_bus.execute(0x100 | self._registers.S, self._registers.PC & 0xFF, 0)
+            self._registers.S -= 1
+            self._cycle_number = 4
+        elif self._cycle_number == 4:
+            self._temp_address |= (self._memory_bus.execute(self._registers.PC, 0, 1) << 8)
+            self._cycle_number = 5
+        else:
+            self._registers.PC = self._temp_address
+            self.load_op_code()
 
     cdef void LDA(self):
         if self._page_cross_possible:
@@ -1058,7 +1160,7 @@ cdef class MOS6502:
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void PHP(self):
-        self._memory_bus.execute(0x100 | self._registers.S, self._registers.P, 0)
+        self._memory_bus.execute(0x100 | self._registers.S, self._registers.P | BREAK_FLAG | UNUSED_FLAG, 0)
         self._registers.S -= 1
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
@@ -1080,7 +1182,7 @@ cdef class MOS6502:
             decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
 
             self._registers.S += 1
-            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
 
             # Check if BCD operations need to be enabled or disabled if necessary
             if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not decimal_mode_was_set:
@@ -1224,11 +1326,45 @@ cdef class MOS6502:
 
             self._current_instruction = NULL
 
-    # cdef void RTI(self):
-    #     pass
+    cdef void RTI(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 2
+        elif self._cycle_number == 2:
+            self._registers.S += 1
+            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
+            self._cycle_number = 3
+        elif self._cycle_number == 3:
+            self._registers.S += 1
+            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 4
+        else:
+            self._registers.S += 1
+            self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
-    # cdef void RTS(self):
-    #     pass
+    cdef void RTS(self):
+        if not self._cycle_number:
+            self._registers.PC += 1
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 2
+        elif self._cycle_number == 2:
+            self._registers.S += 1
+            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 3
+        elif self._cycle_number == 3:
+            self._registers.S += 1
+            self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
+        else:
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._current_instruction = NULL
 
     cdef void SEC(self):
         self._registers.P |= CARRY_FLAG
