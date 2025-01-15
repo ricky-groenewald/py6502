@@ -5,6 +5,7 @@ Simulator definitions and functions for a component controller
 """
 from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
 from .component cimport Component
+from .processor cimport MOS6502, Registers
 
 class ComponentSizeError(Exception):
     """
@@ -25,9 +26,14 @@ cdef class Controller(Component):
     """
     Class definition for an 8-bit component controller
     """
-    def __init__(self, str controller_name) -> None:
+    def __init__(self, str controller_name, MOS6502 processor) -> None:
         # Controllers will always only have 16-bit address space
         super().__init__(0x10000, controller_name)
+        self._processor = processor
+        self._processor.set_memory_bus(self)
+        self._current_data_bus = 0
+        self._current_address_bus = 0
+        self._current_read_write = True
 
     def __dealloc__(self) -> None:
         for i in range(0x10000):
@@ -35,7 +41,7 @@ cdef class Controller(Component):
                 Py_DECREF(<Component>self._component_address_map[i].component)
                 self._component_address_map[i].component = NULL
 
-    cpdef add_component(self, Component component, unsigned int address_start) except *:
+    cpdef void add_component(self, Component component, unsigned int address_start) except *:
         """
         Add a component to the controller
 
@@ -69,6 +75,21 @@ cdef class Controller(Component):
             self._component_address_map[address_start+i].component = <PyObject*>component
             Py_INCREF(component)
 
+    cpdef void clock(self):
+        self._processor.clock()
+
+    cpdef void send_reset(self):
+        self._processor.send_reset()
+
+    cpdef Registers get_registers(self):
+        return self._processor.get_registers()
+
+    cpdef void set_registers(self, Registers registers):
+        self._processor.set_registers(registers)
+
+    def get_bus_values(self):
+        return self._current_address_bus, self._current_data_bus, self._current_read_write
+
     cpdef unsigned char execute(self, unsigned int address, unsigned char data, bint read_write_bar) except *:
         self.address_check(address) # Assert address within controller's address range
             
@@ -79,11 +100,15 @@ cdef class Controller(Component):
 
         cdef Component component = <Component>self._component_address_map[address].component
 
-        return component.execute(
+        self._current_read_write = read_write_bar
+        self._current_address_bus = address
+        self._current_data_bus = component.execute(
             self._component_address_map[address].internal_address,
             data,
             read_write_bar
         )
+
+        return self._current_data_bus
 
     def _detail_str_output(self) -> str:
         last_component = None

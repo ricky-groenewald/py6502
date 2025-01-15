@@ -30,9 +30,9 @@ cdef class MOS6502:
     Based on the 1976 revision of the MCS6502 processor
     """
     
-    def __init__(self, Component memory_bus) -> None:
+    def __init__(self) -> None:
         # Initialize internal and external variables
-        self._memory_bus = memory_bus
+        self._memory_bus = None
         self._cycle_number = 0x00
         self._temp_data = 0x00
         self._temp_address = 0x0000
@@ -263,6 +263,18 @@ cdef class MOS6502:
         self._instructions[0xFE][:] = [&MOS6502.absolute_x, &MOS6502.INC]
 
     ###
+    #   GETTERS AND SETTERS
+    ###
+    cdef Registers get_registers(self):
+        return self._registers
+
+    cdef void set_registers(self, Registers registers):
+        self._registers = registers
+
+    def set_memory_bus(self, Component memory_bus):
+        self._memory_bus = memory_bus
+
+    ###
     #   CONTROL FUNCTIONS
     ###
     cdef void clock(self):
@@ -277,8 +289,7 @@ cdef class MOS6502:
         # Stop everthing and reset the processor
         self._registers.INTERRUPT_TYPE = 2
         self._cycle_number = 0
-        self._current_instruction = &MOS6502.BRK
-        self._next_instruction = NULL
+        self._current_instruction = &MOS6502.load_op_code
 
     cdef void send_irq(self):
         # IRQ can only interrupt BRK mid-cycle (TYPE = 0), and only if it's the first cycle after OPCODE read
@@ -1617,16 +1628,18 @@ cdef class MOS6502:
 
     cdef void RTI(self):
         if not self._cycle_number:
-            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 1
         elif self._cycle_number == 1:
-            self._registers.S += 1
-            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 2
         elif self._cycle_number == 2:
             self._registers.S += 1
-            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
             self._cycle_number = 3
+        elif self._cycle_number == 3:
+            self._registers.S += 1
+            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 4
         else:
             self._registers.S += 1
             self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
@@ -1634,16 +1647,18 @@ cdef class MOS6502:
 
     cdef void RTS(self):
         if not self._cycle_number:
-            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 1
         elif self._cycle_number == 1:
-            self._registers.S += 1
-            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 2
         elif self._cycle_number == 2:
             self._registers.S += 1
-            self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
+            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 3
+        elif self._cycle_number == 3:
+            self._registers.S += 1
+            self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
+            self._cycle_number = 4
         else:
             self._memory_bus.execute(self._registers.PC, 0, 1)
             self._current_instruction = NULL
@@ -1754,12 +1769,3 @@ cdef class MOS6502:
             else self._registers.P & ~NEGATIVE_FLAG
         )
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
-
-    ###
-    #   GETTERS AND SETTERS
-    ###
-    cdef Registers get_registers(self):
-        return self._registers
-
-    cdef void set_registers(self, Registers registers):
-        self._registers = registers

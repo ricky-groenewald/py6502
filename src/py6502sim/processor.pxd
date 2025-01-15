@@ -40,6 +40,12 @@ cdef class MOS6502:
     cdef instruction_func _next_instruction
     cdef unsigned char[16] _adc_sbc_opcodes
 
+    # Getters
+    cdef Registers get_registers(self)
+
+    # Setters
+    cdef void set_registers(self, Registers registers)
+
     # Control Functions
     cdef void clock(self)
     cdef void send_reset(self)
@@ -120,9 +126,3 @@ cdef class MOS6502:
     cdef void TXA(self)
     cdef void TXS(self)
     cdef void TYA(self)
-
-    # Getters
-    cdef Registers get_registers(self)
-
-    # Setters
-    cdef void set_registers(self, Registers registers)
