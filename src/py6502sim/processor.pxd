@@ -42,9 +42,9 @@ cdef class MOS6502:
 
     # Control Functions
     cdef void clock(self)
-    # cdef void send_reset(self)
-    # cdef void send_irq(self)
-    # cdef void send_nmi(self)
+    cdef void send_reset(self)
+    cdef void send_irq(self)
+    cdef void send_nmi(self)
     cdef void load_op_code(self)
     # cdef void clear_bcd_opcodes(self)
     # cdef void set_bcd_opcodes(self)
@@ -122,7 +122,7 @@ cdef class MOS6502:
     cdef void TYA(self)
 
     # Getters
-    cpdef Registers get_registers(self)
+    cdef Registers get_registers(self)
 
     # Setters
-    cpdef void set_registers(self, Registers registers)
+    cdef void set_registers(self, Registers registers)

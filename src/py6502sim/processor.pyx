@@ -86,17 +86,36 @@ cdef class MOS6502:
             self._registers.PC += 1
             self.load_op_code()
 
-    # cdef void send_reset(self):
-    #     print(f'Sending reset to the processor')
+    cdef void send_reset(self):
+        # Stop everthing and reset the processor
+        self._registers.INTERRUPT_TYPE = 2
+        self._cycle_number = 0
+        self._current_instruction = &MOS6502.BRK
+        self._next_instruction = NULL
 
-    # cdef void send_irq(self):
-    #     print(f'Sending IRQ to the processor')
+    cdef void send_irq(self):
+        # IRQ can only interrupt BRK mid-cycle (TYPE = 0), and only if it's the first cycle after OPCODE read
+        if self._current_instruction == &MOS6502.BRK and self._registers.INTERRUPT_TYPE == 0 and self._cycle_number == 0:
+            self._registers.INTERRUPT_TYPE = 1
+        elif not (self._current_instruction == &MOS6502.BRK or self._registers.INTERRUPT_TYPE):
+            self._registers.INTERRUPT_TYPE = 1
 
-    # cdef void send_nmi(self):
-    #     print(f'Sending NMI to the processor')
+    cdef void send_nmi(self):
+        # Cannot interrupt RESETS
+        if self._registers.INTERRUPT_TYPE == 2:
+            return
 
-    # cdef void handle_interrupt(self):
-    #     print(f'Handling interrupt')
+        # NMI can only interrupt BRK mid-cycle (TYPE = 0), and only if it's the first cycle after OPCODE read
+        if self._current_instruction == &MOS6502.BRK and self._registers.INTERRUPT_TYPE == 0 and self._cycle_number == 0:
+            self._registers.INTERRUPT_TYPE = 3
+
+        # In any other mid-cycle BRK type after the first cycle, queue another NMI break
+        elif self._current_instruction == &MOS6502.BRK: # Not RESET
+            self._next_instruction = &MOS6502.BRK
+
+        # In all other cases, load the NMI interrupt regardless of current instruction or interrupt type
+        else:
+            self._registers.INTERRUPT_TYPE = 3
 
     cdef void load_op_code(self) except *:
         if self._registers.INTERRUPT_TYPE:
@@ -611,13 +630,13 @@ cdef class MOS6502:
 
     cdef void BRK(self):
         if not self._cycle_number:
-            self._temp_data = BREAK_FLAG
+            self._temp_data = 0x00
             if not self._registers.INTERRUPT_TYPE:
-                self._temp_data = 0x00 # Only BRK set B flag to 1
+                self._temp_data = BREAK_FLAG # Only BRK set B flag to 1
                 self._registers.PC += 1
-                if self._registers.INTERRUPT_TYPE == 2: # RESET
-                    self._registers.PC = 0x00FF
-                    self._registers.S = 0x00
+            elif self._registers.INTERRUPT_TYPE == 2: # RESET
+                self._registers.PC = 0x00FF
+                self._registers.S = 0x00
 
             self._memory_bus.execute(self._registers.PC, 0, 1)
             self._cycle_number = 1
@@ -650,11 +669,8 @@ cdef class MOS6502:
             self._registers.P &= ~DECIMAL_MODE_FLAG
             self._cycle_number = 4
         elif self._cycle_number == 4:
-            if self._registers.INTERRUPT_TYPE:
-                self._registers.INTERRUPT_TYPE -= 1 # Force 0 = IRQ/BRK, 1 = RESET, 2 = NMI
-
             # Read ADL at 0xFFFE for IRQ/BRK, 0xFFFA for NMI, 0xFFFC for RESET
-            self._registers.PC = 0xFFFE - (2 * self._registers.INTERRUPT_TYPE)
+            self._registers.PC = 0xFFFE - (2 * (self._registers.INTERRUPT_TYPE - 1)) if self._registers.INTERRUPT_TYPE else 0xFFFE
 
             self._temp_address = self._memory_bus.execute(self._registers.PC, 0, 1)
             self._cycle_number = 5
@@ -665,10 +681,10 @@ cdef class MOS6502:
             self._cycle_number = 6
         else:
             self._registers.PC = self._temp_address
-            if self._next_instruction: # In case a higher priority interrupt occurs
-                self._registers.INTERRUPT_TYPE = self._arithmetic_result # This variable will hold the higher priority interrupt type
+            if self._next_instruction: # In case an NMI interrupt occured mid-cycle
+                self._registers.INTERRUPT_TYPE = 3
             else:
-                self._registers.INTERRUPT_TYPE = 0x00
+                self._registers.INTERRUPT_TYPE = 0
             self.load_op_code()
 
     cdef void BVC(self):
@@ -1476,8 +1492,8 @@ cdef class MOS6502:
     ###
     #   GETTERS AND SETTERS
     ###
-    cpdef Registers get_registers(self):
+    cdef Registers get_registers(self):
         return self._registers
 
-    cpdef void set_registers(self, Registers registers):
+    cdef void set_registers(self, Registers registers):
         self._registers = registers
