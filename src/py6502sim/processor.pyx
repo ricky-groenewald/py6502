@@ -73,7 +73,194 @@ cdef class MOS6502:
             ]
 
         # Define OPCODE instruction functions
-        # TODO: Implement OPCODE instruction function map
+        # Format:
+        #   self._instructions[OPCODE] = [Addressing Mode Function, OPCODE Function]
+        #     or
+        #   self._instructions[OPCODE] = [Special OPCODE Function, NULL] (BRK and JSR)
+        # Invalid OPCODEs are set to [NULL, NULL]
+
+        # 0x00 - 0x0F
+        self._instructions[0x00][:] = [&MOS6502.BRK, NULL]
+        self._instructions[0x01][:] = [&MOS6502.indirect_x, &MOS6502.ORA]
+        self._instructions[0x05][:] = [&MOS6502.zero_page, &MOS6502.ORA]
+        self._instructions[0x06][:] = [&MOS6502.zero_page, &MOS6502.ASL]
+        self._instructions[0x08][:] = [&MOS6502.implied, &MOS6502.PHP]
+        self._instructions[0x09][:] = [&MOS6502.immediate, &MOS6502.ORA]
+        self._instructions[0x0A][:] = [&MOS6502.accumulator, &MOS6502.ASL]
+        self._instructions[0x0D][:] = [&MOS6502.absolute, &MOS6502.ORA]
+        self._instructions[0x0E][:] = [&MOS6502.absolute, &MOS6502.ASL]
+
+        # 0x10 - 0x1F
+        self._instructions[0x10][:] = [&MOS6502.immediate, &MOS6502.BPL]
+        self._instructions[0x11][:] = [&MOS6502.indirect_y, &MOS6502.ORA]
+        self._instructions[0x15][:] = [&MOS6502.zero_page_x, &MOS6502.ORA]
+        self._instructions[0x16][:] = [&MOS6502.zero_page_x, &MOS6502.ASL]
+        self._instructions[0x18][:] = [&MOS6502.implied, &MOS6502.CLC]
+        self._instructions[0x19][:] = [&MOS6502.absolute_y, &MOS6502.ORA]
+        self._instructions[0x1D][:] = [&MOS6502.absolute_x, &MOS6502.ORA]
+        self._instructions[0x1E][:] = [&MOS6502.absolute_x, &MOS6502.ASL]
+
+        # 0x20 - 0x2F
+        self._instructions[0x20][:] = [&MOS6502.JSR, NULL]
+        self._instructions[0x21][:] = [&MOS6502.indirect_x, &MOS6502.AND]
+        self._instructions[0x24][:] = [&MOS6502.zero_page, &MOS6502.BIT]
+        self._instructions[0x25][:] = [&MOS6502.zero_page, &MOS6502.AND]
+        self._instructions[0x26][:] = [&MOS6502.zero_page, &MOS6502.ROL]
+        self._instructions[0x28][:] = [&MOS6502.implied, &MOS6502.PLP]
+        self._instructions[0x29][:] = [&MOS6502.immediate, &MOS6502.AND]
+        self._instructions[0x2A][:] = [&MOS6502.accumulator, &MOS6502.ROL]
+        self._instructions[0x2C][:] = [&MOS6502.absolute, &MOS6502.BIT]
+        self._instructions[0x2D][:] = [&MOS6502.absolute, &MOS6502.AND]
+        self._instructions[0x2E][:] = [&MOS6502.absolute, &MOS6502.ROL]
+
+        # 0x30 - 0x3F
+        self._instructions[0x30][:] = [&MOS6502.immediate, &MOS6502.BMI]
+        self._instructions[0x31][:] = [&MOS6502.indirect_y, &MOS6502.AND]
+        self._instructions[0x35][:] = [&MOS6502.zero_page_x, &MOS6502.AND]
+        self._instructions[0x36][:] = [&MOS6502.zero_page_x, &MOS6502.ROL]
+        self._instructions[0x38][:] = [&MOS6502.implied, &MOS6502.SEC]
+        self._instructions[0x39][:] = [&MOS6502.absolute_y, &MOS6502.AND]
+        self._instructions[0x3D][:] = [&MOS6502.absolute_x, &MOS6502.AND]
+        self._instructions[0x3E][:] = [&MOS6502.absolute_x, &MOS6502.ROL]
+
+        # 0x40 - 0x4F
+        self._instructions[0x40][:] = [&MOS6502.implied, &MOS6502.RTI]
+        self._instructions[0x41][:] = [&MOS6502.indirect_x, &MOS6502.EOR]
+        self._instructions[0x45][:] = [&MOS6502.zero_page, &MOS6502.EOR]
+        self._instructions[0x46][:] = [&MOS6502.zero_page, &MOS6502.LSR]
+        self._instructions[0x48][:] = [&MOS6502.implied, &MOS6502.PHA]
+        self._instructions[0x49][:] = [&MOS6502.immediate, &MOS6502.EOR]
+        self._instructions[0x4A][:] = [&MOS6502.accumulator, &MOS6502.LSR]
+        self._instructions[0x4C][:] = [&MOS6502.absolute, &MOS6502.JMP]
+        self._instructions[0x4D][:] = [&MOS6502.absolute, &MOS6502.EOR]
+        self._instructions[0x4E][:] = [&MOS6502.absolute, &MOS6502.LSR]
+
+        # 0x50 - 0x5F
+        self._instructions[0x50][:] = [&MOS6502.immediate, &MOS6502.BVC]
+        self._instructions[0x51][:] = [&MOS6502.indirect_y, &MOS6502.EOR]
+        self._instructions[0x55][:] = [&MOS6502.zero_page_x, &MOS6502.EOR]
+        self._instructions[0x56][:] = [&MOS6502.zero_page_x, &MOS6502.LSR]
+        self._instructions[0x58][:] = [&MOS6502.implied, &MOS6502.CLI]
+        self._instructions[0x59][:] = [&MOS6502.absolute_y, &MOS6502.EOR]
+        self._instructions[0x5D][:] = [&MOS6502.absolute_x, &MOS6502.EOR]
+        self._instructions[0x5E][:] = [&MOS6502.absolute_x, &MOS6502.LSR]
+
+        # 0x60 - 0x6F
+        self._instructions[0x60][:] = [&MOS6502.implied, &MOS6502.RTS]
+        self._instructions[0x61][:] = [&MOS6502.indirect_x, &MOS6502.ADC_SBC]
+        self._instructions[0x65][:] = [&MOS6502.zero_page, &MOS6502.ADC_SBC]
+        self._instructions[0x66][:] = [&MOS6502.zero_page, &MOS6502.ROR]
+        self._instructions[0x68][:] = [&MOS6502.implied, &MOS6502.PLA]
+        self._instructions[0x69][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
+        self._instructions[0x6A][:] = [&MOS6502.accumulator, &MOS6502.ROR]
+        self._instructions[0x6C][:] = [&MOS6502.indirect, &MOS6502.JMP]
+        self._instructions[0x6D][:] = [&MOS6502.absolute, &MOS6502.ADC_SBC]
+        self._instructions[0x6E][:] = [&MOS6502.absolute, &MOS6502.ROR]
+
+        # 0x70 - 0x7F
+        self._instructions[0x70][:] = [&MOS6502.immediate, &MOS6502.BVS]
+        self._instructions[0x71][:] = [&MOS6502.indirect_y, &MOS6502.ADC_SBC]
+        self._instructions[0x75][:] = [&MOS6502.zero_page_x, &MOS6502.ADC_SBC]
+        self._instructions[0x76][:] = [&MOS6502.zero_page_x, &MOS6502.ROR]
+        self._instructions[0x78][:] = [&MOS6502.implied, &MOS6502.SEI]
+        self._instructions[0x79][:] = [&MOS6502.absolute_y, &MOS6502.ADC_SBC]
+        self._instructions[0x7D][:] = [&MOS6502.absolute_x, &MOS6502.ADC_SBC]
+        self._instructions[0x7E][:] = [&MOS6502.absolute_x, &MOS6502.ROR]
+
+        # 0x80 - 0x8F
+        self._instructions[0x81][:] = [&MOS6502.indirect_x, &MOS6502.STA]
+        self._instructions[0x84][:] = [&MOS6502.zero_page, &MOS6502.STY]
+        self._instructions[0x85][:] = [&MOS6502.zero_page, &MOS6502.STA]
+        self._instructions[0x86][:] = [&MOS6502.zero_page, &MOS6502.STX]
+        self._instructions[0x88][:] = [&MOS6502.implied, &MOS6502.DEY]
+        self._instructions[0x8A][:] = [&MOS6502.implied, &MOS6502.TXA]
+        self._instructions[0x8C][:] = [&MOS6502.absolute, &MOS6502.STY]
+        self._instructions[0x8D][:] = [&MOS6502.absolute, &MOS6502.STA]
+        self._instructions[0x8E][:] = [&MOS6502.absolute, &MOS6502.STX]
+
+        # 0x90 - 0x9F
+        self._instructions[0x90][:] = [&MOS6502.immediate, &MOS6502.BCC]
+        self._instructions[0x91][:] = [&MOS6502.indirect_y, &MOS6502.STA]
+        self._instructions[0x94][:] = [&MOS6502.zero_page_x, &MOS6502.STY]
+        self._instructions[0x95][:] = [&MOS6502.zero_page_x, &MOS6502.STA]
+        self._instructions[0x96][:] = [&MOS6502.zero_page_y, &MOS6502.STX]
+        self._instructions[0x98][:] = [&MOS6502.implied, &MOS6502.TYA]
+        self._instructions[0x99][:] = [&MOS6502.absolute_y, &MOS6502.STA]
+        self._instructions[0x9A][:] = [&MOS6502.implied, &MOS6502.TXS]
+        self._instructions[0x9D][:] = [&MOS6502.absolute_x, &MOS6502.STA]
+
+        # 0xA0 - 0xAF
+        self._instructions[0xA0][:] = [&MOS6502.immediate, &MOS6502.LDY]
+        self._instructions[0xA1][:] = [&MOS6502.indirect_x, &MOS6502.LDA]
+        self._instructions[0xA2][:] = [&MOS6502.immediate, &MOS6502.LDX]
+        self._instructions[0xA4][:] = [&MOS6502.zero_page, &MOS6502.LDY]
+        self._instructions[0xA5][:] = [&MOS6502.zero_page, &MOS6502.LDA]
+        self._instructions[0xA6][:] = [&MOS6502.zero_page, &MOS6502.LDX]
+        self._instructions[0xA8][:] = [&MOS6502.implied, &MOS6502.TAY]
+        self._instructions[0xA9][:] = [&MOS6502.immediate, &MOS6502.LDA]
+        self._instructions[0xAA][:] = [&MOS6502.implied, &MOS6502.TAX]
+        self._instructions[0xAC][:] = [&MOS6502.absolute, &MOS6502.LDY]
+        self._instructions[0xAD][:] = [&MOS6502.absolute, &MOS6502.LDA]
+        self._instructions[0xAE][:] = [&MOS6502.absolute, &MOS6502.LDX]
+
+        # 0xB0 - 0xBF
+        self._instructions[0xB0][:] = [&MOS6502.immediate, &MOS6502.BCS]
+        self._instructions[0xB1][:] = [&MOS6502.indirect_y, &MOS6502.LDA]
+        self._instructions[0xB4][:] = [&MOS6502.zero_page_x, &MOS6502.LDY]
+        self._instructions[0xB5][:] = [&MOS6502.zero_page_x, &MOS6502.LDA]
+        self._instructions[0xB6][:] = [&MOS6502.zero_page_y, &MOS6502.LDX]
+        self._instructions[0xB8][:] = [&MOS6502.implied, &MOS6502.CLV]
+        self._instructions[0xB9][:] = [&MOS6502.absolute_y, &MOS6502.LDA]
+        self._instructions[0xBA][:] = [&MOS6502.implied, &MOS6502.TSX]
+        self._instructions[0xBC][:] = [&MOS6502.absolute_x, &MOS6502.LDY]
+        self._instructions[0xBD][:] = [&MOS6502.absolute_x, &MOS6502.LDA]
+        self._instructions[0xBE][:] = [&MOS6502.absolute_y, &MOS6502.LDX]
+
+        # 0xC0 - 0xCF
+        self._instructions[0xC0][:] = [&MOS6502.immediate, &MOS6502.CPY]
+        self._instructions[0xC1][:] = [&MOS6502.indirect_x, &MOS6502.CMP]
+        self._instructions[0xC4][:] = [&MOS6502.zero_page, &MOS6502.CPY]
+        self._instructions[0xC5][:] = [&MOS6502.zero_page, &MOS6502.CMP]
+        self._instructions[0xC6][:] = [&MOS6502.zero_page, &MOS6502.DEC]
+        self._instructions[0xC8][:] = [&MOS6502.implied, &MOS6502.INY]
+        self._instructions[0xC9][:] = [&MOS6502.immediate, &MOS6502.CMP]
+        self._instructions[0xCA][:] = [&MOS6502.implied, &MOS6502.DEX]
+        self._instructions[0xCC][:] = [&MOS6502.absolute, &MOS6502.CPY]
+        self._instructions[0xCD][:] = [&MOS6502.absolute, &MOS6502.CMP]
+        self._instructions[0xCE][:] = [&MOS6502.absolute, &MOS6502.DEC]
+
+        # 0xD0 - 0xDF
+        self._instructions[0xD0][:] = [&MOS6502.immediate, &MOS6502.BNE]
+        self._instructions[0xD1][:] = [&MOS6502.indirect_y, &MOS6502.CMP]
+        self._instructions[0xD5][:] = [&MOS6502.zero_page_x, &MOS6502.CMP]
+        self._instructions[0xD6][:] = [&MOS6502.zero_page_x, &MOS6502.DEC]
+        self._instructions[0xD8][:] = [&MOS6502.implied, &MOS6502.CLD]
+        self._instructions[0xD9][:] = [&MOS6502.absolute_y, &MOS6502.CMP]
+        self._instructions[0xDD][:] = [&MOS6502.absolute_x, &MOS6502.CMP]
+        self._instructions[0xDE][:] = [&MOS6502.absolute_x, &MOS6502.DEC]
+
+        # 0xE0 - 0xEF
+        self._instructions[0xE0][:] = [&MOS6502.immediate, &MOS6502.CPX]
+        self._instructions[0xE1][:] = [&MOS6502.indirect_x, &MOS6502.ADC_SBC]
+        self._instructions[0xE4][:] = [&MOS6502.zero_page, &MOS6502.CPX]
+        self._instructions[0xE5][:] = [&MOS6502.zero_page, &MOS6502.ADC_SBC]
+        self._instructions[0xE6][:] = [&MOS6502.zero_page, &MOS6502.INC]
+        self._instructions[0xE8][:] = [&MOS6502.implied, &MOS6502.INX]
+        self._instructions[0xE9][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
+        self._instructions[0xEA][:] = [&MOS6502.implied, &MOS6502.NOP]
+        self._instructions[0xEC][:] = [&MOS6502.absolute, &MOS6502.CPX]
+        self._instructions[0xED][:] = [&MOS6502.absolute, &MOS6502.ADC_SBC]
+        self._instructions[0xEE][:] = [&MOS6502.absolute, &MOS6502.INC]
+
+        # 0xF0 - 0xFF
+        self._instructions[0xF0][:] = [&MOS6502.immediate, &MOS6502.BEQ]
+        self._instructions[0xF1][:] = [&MOS6502.indirect_y, &MOS6502.ADC_SBC]
+        self._instructions[0xF5][:] = [&MOS6502.zero_page_x, &MOS6502.ADC_SBC]
+        self._instructions[0xF6][:] = [&MOS6502.zero_page_x, &MOS6502.INC]
+        self._instructions[0xF8][:] = [&MOS6502.implied, &MOS6502.SED]
+        self._instructions[0xF9][:] = [&MOS6502.absolute_y, &MOS6502.ADC_SBC]
+        self._instructions[0xFD][:] = [&MOS6502.absolute_x, &MOS6502.ADC_SBC]
+        self._instructions[0xFE][:] = [&MOS6502.absolute_x, &MOS6502.INC]
 
     ###
     #   CONTROL FUNCTIONS
@@ -752,7 +939,7 @@ cdef class MOS6502:
             )
             self._registers.S -= 1
             self._registers.P |= IRQ_DISABLE_FLAG | BREAK_FLAG
-            self._registers.P &= ~DECIMAL_MODE_FLAG
+            # self._registers.P &= ~DECIMAL_MODE_FLAG # Original NMOS 6502 doesn't clear this flag
             self._cycle_number = 4
         elif self._cycle_number == 4:
             # Read ADL at 0xFFFE for IRQ/BRK, 0xFFFA for NMI, 0xFFFC for RESET
@@ -1430,20 +1617,16 @@ cdef class MOS6502:
 
     cdef void RTI(self):
         if not self._cycle_number:
-            self._registers.PC += 1
-            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 1
         elif self._cycle_number == 1:
-            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._registers.S += 1
+            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
             self._cycle_number = 2
         elif self._cycle_number == 2:
             self._registers.S += 1
-            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
-            self._cycle_number = 3
-        elif self._cycle_number == 3:
-            self._registers.S += 1
             self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
-            self._cycle_number = 4
+            self._cycle_number = 3
         else:
             self._registers.S += 1
             self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
@@ -1451,19 +1634,16 @@ cdef class MOS6502:
 
     cdef void RTS(self):
         if not self._cycle_number:
-            self._registers.PC += 1
-            self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 1
         elif self._cycle_number == 1:
-            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._registers.S += 1
+            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 2
         elif self._cycle_number == 2:
             self._registers.S += 1
-            self._temp_data = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
-            self._cycle_number = 3
-        elif self._cycle_number == 3:
-            self._registers.S += 1
             self._registers.PC = (self._memory_bus.execute(0x100 | self._registers.S, 0, 1) << 8) | self._temp_data
+            self._cycle_number = 3
         else:
             self._memory_bus.execute(self._registers.PC, 0, 1)
             self._current_instruction = NULL
