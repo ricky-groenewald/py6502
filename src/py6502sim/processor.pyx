@@ -1090,6 +1090,146 @@ cdef class MOS6502:
 
             self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
+    cdef void ROL(self):
+        if self._accumulator_addressing:
+            self._arithmetic_result = self._registers.P & CARRY_FLAG # Used to store original carry bit
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._registers.ACC & 0x80
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._registers.ACC = (self._registers.ACC << 1) | self._arithmetic_result
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._accumulator_addressing = False
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+            return
+
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            self._memory_bus.execute(self._temp_address, 0, 1)
+            self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(self._temp_address, self._temp_data, 0)
+            self._cycle_number = 2
+        else:
+            self._arithmetic_result = self._registers.P & CARRY_FLAG # Used to store original carry bit
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x80
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data = (self._temp_data << 1) | self._arithmetic_result
+            self._memory_bus.execute(self._temp_address, self._temp_data, 0)
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._temp_data
+                else self._registers.P | ZERO_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._temp_data & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._current_instruction = NULL
+
+    cdef void ROR(self):
+        if self._accumulator_addressing:
+            self._arithmetic_result = (self._registers.P & CARRY_FLAG) << 7 # Used to store original carry bit
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._registers.ACC & 0x01
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._registers.ACC = (self._registers.ACC >> 1) | self._arithmetic_result
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._accumulator_addressing = False
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+            return
+
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            self._memory_bus.execute(self._temp_address, 0, 1)
+            self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(self._temp_address, self._temp_data, 0)
+            self._cycle_number = 2
+        else:
+            self._arithmetic_result = (self._registers.P & CARRY_FLAG) << 7 # Used to store original carry bit
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x01
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data = (self._temp_data >> 1) | self._arithmetic_result
+            self._memory_bus.execute(self._temp_address, self._temp_data, 0)
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._temp_data
+                else self._registers.P | ZERO_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._temp_data & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._current_instruction = NULL
+
+    # cdef void RTI(self):
+    #     pass
+
+    # cdef void RTS(self):
+    #     pass
+
     cdef void SEC(self):
         self._registers.P |= CARRY_FLAG
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
@@ -1101,6 +1241,100 @@ cdef class MOS6502:
 
     cdef void SEI(self):
         self._registers.P |= IRQ_DISABLE_FLAG
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void STA(self):
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            self._memory_bus.execute(self._temp_address, 0, 1)
+            self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
+        self._memory_bus.execute(self._temp_address, self._registers.ACC, 0)
+        self._current_instruction = NULL
+
+    cdef void STX(self):
+        self._memory_bus.execute(self._temp_address, self._registers.X, 0)
+        self._current_instruction = NULL
+
+    cdef void STY(self):
+        self._memory_bus.execute(self._temp_address, self._registers.Y, 0)
+        self._current_instruction = NULL
+
+    cdef void TAX(self):
+        self._registers.X = self._registers.ACC
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.X
+            else self._registers.P | ZERO_FLAG
+        )
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.X & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void TAY(self):
+        self._registers.Y = self._registers.ACC
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.Y
+            else self._registers.P | ZERO_FLAG
+        )
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.Y & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void TSX(self):
+        self._registers.X = self._registers.S
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.X
+            else self._registers.P | ZERO_FLAG
+        )
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.X & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void TXA(self):
+        self._registers.ACC = self._registers.X
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void TXS(self):
+        self._registers.S = self._registers.X
+        # No flags are affected
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void TYA(self):
+        self._registers.ACC = self._registers.Y
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     ###
