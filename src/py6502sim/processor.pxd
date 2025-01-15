@@ -26,7 +26,7 @@ cdef class MOS6502:
     cdef unsigned char _cycle_number
     cdef unsigned char _temp_data
     cdef unsigned short _temp_address
-    cdef unsigned char _interrupt_flag
+    cdef unsigned char _incoming_interrupt_flag
     cdef bint _page_cross_possible
     cdef bint _page_cross_occurred
     cdef bint _accumulator_addressing
@@ -37,6 +37,7 @@ cdef class MOS6502:
     cdef instruction_func[256][2] _instructions
     cdef instruction_func _current_instruction
     cdef instruction_func _next_instruction
+    cdef unsigned char[16] _adc_sbc_opcodes
 
     # Control Functions
     cdef void clock(self)
@@ -45,6 +46,8 @@ cdef class MOS6502:
     # cdef void send_nmi(self)
     # cdef void handle_interrupt(self)
     cdef void load_op_code(self)
+    # cdef void set_decimal_mode(self)
+    # cdef void clear_decimal_mode(self)
 
     # Addressing Modes
     cdef void absolute(self)
@@ -52,6 +55,7 @@ cdef class MOS6502:
     cdef void absolute_y(self)
     cdef void accumulator(self)
     cdef void immediate(self) # Also handles relative addressing
+    cdef void implied(self)
     cdef void indirect_x(self)
     cdef void indirect_y(self)
     cdef void zero_page(self)
@@ -73,13 +77,13 @@ cdef class MOS6502:
     # cdef void BRK(self)
     cdef void BVC(self)
     cdef void BVS(self)
-    # cdef void CLC(self)
+    cdef void CLC(self)
     # cdef void CLD(self)
-    # cdef void CLI(self)
-    # cdef void CLV(self)
-    # cdef void CMP(self)
-    # cdef void CPX(self)
-    # cdef void CPY(self)
+    cdef void CLI(self)
+    cdef void CLV(self)
+    cdef void CMP(self)
+    cdef void CPX(self)
+    cdef void CPY(self)
     # cdef void DEC(self)
     # cdef void DEX(self)
     # cdef void DEY(self)

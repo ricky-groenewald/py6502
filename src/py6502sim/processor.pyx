@@ -11,8 +11,8 @@ from .component cimport Component
 # Compile-Time Definitions
 DEF CARRY_FLAG = 0b00000001
 DEF ZERO_FLAG = 0b00000010
-DEF IRQ_FLAG = 0b00000100
-DEF DECIMAL_FLAG = 0b00001000
+DEF IRQ_DISABLE_FLAG = 0b00000100
+DEF DECIMAL_MODE_FLAG = 0b00001000
 DEF BRK_FLAG = 0b00010000
 DEF OVERFLOW_FLAG = 0b01000000
 DEF NEGATIVE_FLAG = 0b10000000
@@ -35,7 +35,7 @@ cdef class MOS6502:
         self._cycle_number = 0x00
         self._temp_data = 0x00
         self._temp_address = 0x0000
-        self._interrupt_flag = 0 # 0 = None, 1 = IRQ, 2 = NMI, 3 = RESET
+        self._incoming_interrupt_flag = 0 # 0 = None, 1 = IRQ, 2 = NMI, 3 = RESET
         self._page_cross_possible = False
         self._page_cross_occurred = False
         self._accumulator_addressing = False
@@ -62,8 +62,13 @@ cdef class MOS6502:
 
         # Initialize instruction functions
         memset(&self._instructions[0][0], 0, sizeof(instruction_func) * 256 * 2)
-        self._current_instruction = NULL
+        self._current_instruction = &MOS6502.load_op_code
         self._next_instruction = NULL
+
+        self._adc_sbc_opcodes[:] = [
+                0x69, 0x6D, 0x65, 0x61, 0x71, 0x75, 0x7D, 0x79,
+                0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
+            ]
 
         # Define OPCODE instruction functions
         # TODO: Implement OPCODE instruction function map
@@ -74,9 +79,11 @@ cdef class MOS6502:
     cdef void clock(self):
         if self._current_instruction is not NULL:
             self._current_instruction(self)
-        elif self._interrupt_flag:
+        elif self._incoming_interrupt_flag:
+            self._registers.PC += 1
             self.handle_interrupt()
         else:
+            self._registers.PC += 1
             self.load_op_code()
 
     # cdef void send_reset(self):
@@ -100,6 +107,24 @@ cdef class MOS6502:
             raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
 
         self._cycle_number = 0
+        # We don't update the PC here, as we need to keep the registers consistent
+        # with its value during the entire cycle
+
+    # cdef void set_decimal_mode(self):
+    #     self._registers.P |= DECIMAL_MODE_FLAG
+
+    #     # Change all ADC and SBC opcodes to use BCD version
+    #     # For NES implementations, remove this FOR loop, but keep the flag update above
+    #     for opcode in self._adc_sbc_opcodes:
+    #         self._instructions[opcode][1] = &self.ADC_SBC_BCD
+
+    # cdef void clear_decimal_mode(self):
+    #     self._registers.P &= ~DECIMAL_MODE_FLAG
+
+    #     # Change all ADC and SBC opcodes back to normal
+    #     # For NES implementations, remove this FOR loop, but keep the flag update above
+    #     for opcode in self._adc_sbc_opcodes:
+    #         self._instructions[opcode][1] = &self.ADC_SBC
 
     ###
     #   ADDRESSING MODES
@@ -156,6 +181,12 @@ cdef class MOS6502:
     cdef void immediate(self): # Also handles relative addressing
         self._registers.PC += 1
         self._temp_address = self._registers.PC
+        self._current_instruction, self._next_instruction = self._next_instruction, NULL
+        self._current_instruction(self)
+
+    cdef void implied(self):
+        self._registers.PC += 1
+        self._memory_bus.execute(self._registers.PC, 0, 1)
         self._current_instruction, self._next_instruction = self._next_instruction, NULL
         self._current_instruction(self)
 
@@ -275,7 +306,7 @@ cdef class MOS6502:
         # Set zero flag
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
-            if self._arithmetic_result
+            if (self._arithmetic_result & 0xFF)
             else self._registers.P | ZERO_FLAG
         )
 
@@ -295,7 +326,6 @@ cdef class MOS6502:
 
         self._registers.ACC = self._arithmetic_result
         self._current_instruction = NULL
-        self._registers.PC += 1
 
     # I hate BCD so much!
     # cdef void ADC_SBC_BCD(self):
@@ -329,7 +359,6 @@ cdef class MOS6502:
             else self._registers.P & ~NEGATIVE_FLAG
         )
         self._current_instruction = NULL
-        self._registers.PC += 1
 
     cdef void ASL(self):
         if self._accumulator_addressing:
@@ -391,76 +420,78 @@ cdef class MOS6502:
             )
 
             self._current_instruction = NULL
-            self._registers.PC += 1
 
     cdef void BCC(self):
-        if not (self._registers.P & CARRY_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if (self._registers.P & CARRY_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
 
-        self._current_instruction = NULL
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
 
     cdef void BCS(self):
-        if (self._registers.P & CARRY_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if not (self._registers.P & CARRY_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
 
-        self._current_instruction = NULL
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
 
     cdef void BEQ(self):
-        if (self._registers.P & ZERO_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if not (self._registers.P & ZERO_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
 
-        self._current_instruction = NULL
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
 
     cdef void BIT(self):
         self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1) & self._registers.ACC
@@ -483,123 +514,226 @@ cdef class MOS6502:
         )
 
         self._current_instruction = NULL
-        self._registers.PC += 1
 
     cdef void BMI(self):
-        if (self._registers.P & NEGATIVE_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if not (self._registers.P & NEGATIVE_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
 
-        self._current_instruction = NULL
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
 
     cdef void BNE(self):
-        if not (self._registers.P & ZERO_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if (self._registers.P & ZERO_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
 
-        self._current_instruction = NULL
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
 
     cdef void BPL(self):
-        if not (self._registers.P & NEGATIVE_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if (self._registers.P & NEGATIVE_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
 
-        self._current_instruction = NULL
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
 
     # cdef void BRK(self):
     #     pass
 
     cdef void BVC(self):
-        if not (self._registers.P & OVERFLOW_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
-
-                self._registers.PC = self._temp_address
-                return
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if (self._registers.P & OVERFLOW_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
             else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
+
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
             self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
+
+    cdef void BVS(self):
+        if not self._cycle_number:
+            self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
+            if not (self._registers.P & OVERFLOW_FLAG):
+                # Branch not taken
+                self._current_instruction = NULL
+            else:
+                self._temp_address += self._branch_offset + 1
+                self._cycle_number = 1
+            return
+
+        if self._cycle_number == 1:
+            self._registers.PC = (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF)
+            self._memory_bus.execute(self._registers.PC, 0, 1)
+            if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
+                self._cycle_number = 2
+            else:
+                self._current_instruction = &self.load_op_code
+            return
+
+        self._registers.PC = self._temp_address
+        self._memory_bus.execute(self._registers.PC, 0, 1)
+        self._current_instruction = &self.load_op_code
+
+    cdef void CLC(self):
+        self._registers.P &= ~CARRY_FLAG
+        self._current_instruction = NULL
+
+    # cdef void CLD(self):
+    #     self.clear_decimal_mode()
+    #     self._current_instruction = NULL
+
+    cdef void CLI(self):
+        self._registers.P &= ~IRQ_DISABLE_FLAG
+        self._current_instruction = NULL
+
+    cdef void CLV(self):
+        self._registers.P &= ~OVERFLOW_FLAG
+        self._current_instruction = NULL
+
+    cdef void CMP(self):
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            if self._page_cross_occurred:
+                self._memory_bus.execute(self._temp_address, 0, 1)
+                self._page_cross_occurred = False
+            self._page_cross_possible = False
+            return
+
+        # Convert to 2's complement to subtract
+        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF) + 1
+        self._arithmetic_result = self._registers.ACC + self._temp_data
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if (self._arithmetic_result & 0xFF)
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if (self._arithmetic_result & 0x80)
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if (self._arithmetic_result >> 8)
+            else self._registers.P & ~CARRY_FLAG
+        )
 
         self._current_instruction = NULL
 
-    cdef void BVS(self):
-        if (self._registers.P & OVERFLOW_FLAG):
-            if not self._cycle_number:
-                self._branch_offset = self._memory_bus.execute(self._temp_address, 0, 1)
-                self._temp_address += self._branch_offset + 1
-                self._memory_bus.execute(
-                    (self._registers.PC & 0xFF00) | (self._temp_address & 0xFF),
-                    0,
-                    1
-                )
-                if (self._registers.PC & 0xFF00) != (self._temp_address & 0xFF00):
-                    self._cycle_number = 1
+    cdef void CPX(self):
+        # Convert to 2's complement to subtract
+        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF) + 1
+        self._arithmetic_result = self._registers.X + self._temp_data
 
-                self._registers.PC = self._temp_address
-                return
-            else:
-                self._memory_bus.execute(self._registers.PC, 0, 1)
-        else:
-            self._memory_bus.execute(self._registers.PC, 0, 1)
-            self._registers.PC += 1
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if (self._arithmetic_result & 0xFF)
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if (self._arithmetic_result & 0x80)
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if (self._arithmetic_result >> 8)
+            else self._registers.P & ~CARRY_FLAG
+        )
+
+        self._current_instruction = NULL
+
+    cdef void CPY(self):
+        # Convert to 2's complement to subtract
+        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF) + 1
+        self._arithmetic_result = self._registers.Y + self._temp_data
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if (self._arithmetic_result & 0xFF)
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if (self._arithmetic_result & 0x80)
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if (self._arithmetic_result >> 8)
+            else self._registers.P & ~CARRY_FLAG
+        )
 
         self._current_instruction = NULL
 
