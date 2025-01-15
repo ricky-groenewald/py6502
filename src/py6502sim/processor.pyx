@@ -1029,6 +1029,67 @@ cdef class MOS6502:
     cdef void NOP(self):
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
+    cdef void ORA(self):
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            self._page_cross_possible = False
+            if self._page_cross_occurred:
+                self._memory_bus.execute(self._temp_address, 0, 1)
+                self._page_cross_occurred = False
+                return
+
+        self._registers.ACC |= self._memory_bus.execute(self._temp_address, 0, 1)
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+        self._current_instruction = NULL
+
+    cdef void PHA(self):
+        self._memory_bus.execute(0x100 | self._registers.S, self._registers.ACC, 0)
+        self._registers.S -= 1
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void PHP(self):
+        self._memory_bus.execute(0x100 | self._registers.S, self._registers.P, 0)
+        self._registers.S -= 1
+        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void PLA(self):
+        if not self._cycle_number:
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 1
+        else:
+            self._registers.S += 1
+            self._registers.ACC = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
+    cdef void PLP(self):
+        cdef bint decimal_mode_was_set
+        if not self._cycle_number:
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 1
+        else:
+            decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
+
+            self._registers.S += 1
+            self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+
+            # Check if BCD operations need to be enabled or disabled if necessary
+            if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not decimal_mode_was_set:
+                self.set_bcd_opcodes()
+            elif not <bint>(self._registers.P & DECIMAL_MODE_FLAG) and decimal_mode_was_set:
+                self.clear_bcd_opcodes()
+
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+
     cdef void SEC(self):
         self._registers.P |= CARRY_FLAG
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
