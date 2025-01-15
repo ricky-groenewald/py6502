@@ -46,8 +46,8 @@ cdef class MOS6502:
     cdef void send_irq(self)
     cdef void send_nmi(self)
     cdef void load_op_code(self)
-    # cdef void clear_bcd_opcodes(self)
-    # cdef void set_bcd_opcodes(self)
+    cdef void clear_bcd_opcodes(self)
+    cdef void set_bcd_opcodes(self)
 
     # Addressing Modes
     cdef void absolute(self)
@@ -65,7 +65,7 @@ cdef class MOS6502:
 
     # # Opcode functions
     cdef void ADC_SBC(self)
-    # cdef void ADC_SBC_BCD(self)
+    cdef void ADC_SBC_BCD(self)
     cdef void AND(self)
     cdef void ASL(self)
     cdef void BCC(self)

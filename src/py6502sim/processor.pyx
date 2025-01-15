@@ -133,19 +133,19 @@ cdef class MOS6502:
         # We don't update the PC here, as we need to keep the registers consistent
         # with its value during the entire cycle
 
-    # cdef void clear_bcd_opcodes(self):
-    #     # Change all ADC and SBC opcodes back to normal
-    #     # For NES implementations, remove this FOR loop
-    #     for opcode in self._adc_sbc_opcodes:
-    #         self._instructions[opcode][1] = &MOS6502.ADC_SBC
-    #     # pass
+    cdef void clear_bcd_opcodes(self):
+        # Change all ADC and SBC opcodes back to normal
+        # For NES implementations, remove this FOR loop
+        for opcode in self._adc_sbc_opcodes:
+            self._instructions[opcode][1] = &MOS6502.ADC_SBC
+        # pass
 
-    # cdef void set_bcd_opcodes(self):
-    #     # Change all ADC and SBC opcodes to use BCD version
-    #     # For NES implementations, remove this FOR loop
-    #     for opcode in self._adc_sbc_opcodes:
-    #         self._instructions[opcode][1] = &MOS6502.ADC_SBC_BCD
-    #     # pass
+    cdef void set_bcd_opcodes(self):
+        # Change all ADC and SBC opcodes to use BCD version
+        # For NES implementations, remove this FOR loop
+        for opcode in self._adc_sbc_opcodes:
+            self._instructions[opcode][1] = &MOS6502.ADC_SBC_BCD
+        # pass
 
     ###
     #   ADDRESSING MODES
@@ -368,15 +368,101 @@ cdef class MOS6502:
         self._registers.ACC = self._arithmetic_result
         self._current_instruction = NULL
 
-    # I hate BCD so much!
-    # cdef void ADC_SBC_BCD(self):
-        # if self._page_cross_possible:
-        #     # Run a discarding cycle if a page cross occured
-        #     self._page_cross_possible = False
-        #     if self._page_cross_occurred:
-        #         self._memory_bus.execute(self._temp_address, 0, 1)
-        #         self._page_cross_occurred = False
-        #         return
+    cdef void ADC_SBC_BCD(self):
+        ###
+        ### You know what? ...Fuck BCD!
+        ###
+        ### Yeah... I can't remember how I got to this, but it works. I think I found a psuedo-code
+        ### algorithm for BCD addition/subtraction on the internet somewhere and adapted it in my
+        ### first "Pure Python" implementation. Look up commit 1dd4fd8 in the repo for more details.
+        ###
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            self._page_cross_possible = False
+            if self._page_cross_occurred:
+                self._memory_bus.execute(self._temp_address, 0, 1)
+                self._page_cross_occurred = False
+                return
+
+        cdef signed short result, bin_result
+
+        # _temp_data is used to store the value read from memory/accumulator/operand
+        self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
+
+        # If OPCODE & 0x80 is set, we are subtracting
+        result = (
+                (self._registers.ACC & 0x0F) +
+                (1 - 2 * ((self._registers.OPCODE & 0x80) >> 7)) * (self._temp_data & 0x0F) +
+                (self._registers.P & CARRY_FLAG) - ((self._registers.OPCODE & 0x80) >> 7)
+            )
+
+        if (self._registers.OPCODE & 0x80): # If subtracting
+            bin_result = self._registers.ACC + (self._temp_data^0xff) + (self._registers.P & CARRY_FLAG)
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if bin_result & 0xFF
+                else self._registers.P | ZERO_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if bin_result & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            if result < 0:
+                result = ((result - 0x06) & 0x0f) - 0x10
+            result = (self._registers.ACC & 0xf0) - (self._temp_data & 0xf0) + result
+            if result < 0:
+                result -= 0x60
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if result >= 0
+                else self._registers.P & ~CARRY_FLAG
+            )
+            self._temp_data ^= 0xff
+            self._registers.P = (
+                self._registers.P | OVERFLOW_FLAG
+                if ((self._registers.ACC^(bin_result & 0xff)) & (self._temp_data^(bin_result & 0xff)) & 0x80)
+                else self._registers.P & ~OVERFLOW_FLAG
+            )
+            self._registers.ACC = result & 0xff
+        else:
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if ((self._registers.ACC + self._temp_data + (self._registers.P & CARRY_FLAG)) & 0xff)
+                else self._registers.P | ZERO_FLAG
+            )
+            if result >= 0x0a:
+                result = ((result + 0x06) & 0x0f) + 0x10
+            bin_result = (self._registers.ACC & 0xf0) + (self._temp_data & 0xf0) + result
+            if bin_result >= 0xa0:
+                bin_result += 0x60
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if bin_result >= 0x100
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            signed_acc = self._registers.ACC & 0xf0
+            signed_acc = signed_acc - (256 * (signed_acc >> 7))
+            signed_val = self._temp_data & 0xf0
+            signed_val = signed_val - (256 * (signed_val >> 7))
+            signed_result = signed_acc + signed_val + result
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if signed_result & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | OVERFLOW_FLAG
+                if signed_result < -128 or signed_result > 127
+                else self._registers.P & ~OVERFLOW_FLAG
+            )
+
+            self._registers.ACC = bin_result & 0xff
+
+        self._current_instruction = NULL
 
     cdef void AND(self):
         if self._page_cross_possible:
