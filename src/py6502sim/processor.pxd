@@ -46,8 +46,8 @@ cdef class MOS6502:
     # cdef void send_nmi(self)
     # cdef void handle_interrupt(self)
     cdef void load_op_code(self)
-    # cdef void set_decimal_mode(self)
     # cdef void clear_decimal_mode(self)
+    # cdef void set_decimal_mode(self)
 
     # Addressing Modes
     cdef void absolute(self)
@@ -107,9 +107,9 @@ cdef class MOS6502:
     # cdef void ROR(self)
     # cdef void RTI(self)
     # cdef void RTS(self)
-    # cdef void SEC(self)
+    cdef void SEC(self)
     # cdef void SED(self)
-    # cdef void SEI(self)
+    cdef void SEI(self)
     # cdef void STA(self)
     # cdef void STX(self)
     # cdef void STY(self)
@@ -122,12 +122,6 @@ cdef class MOS6502:
 
     # Getters
     cpdef Registers get_registers(self)
-    cpdef unsigned char get_current_op_code(self)
-    cpdef unsigned char get_current_data(self)
-    cpdef unsigned short get_current_address(self)
 
     # Setters
     cpdef void set_registers(self, Registers registers)
-    cpdef void set_current_op_code(self, unsigned char op_code)
-    cpdef void set_current_data(self, unsigned char data)
-    cpdef void set_current_address(self, unsigned short address)

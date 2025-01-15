@@ -110,14 +110,6 @@ cdef class MOS6502:
         # We don't update the PC here, as we need to keep the registers consistent
         # with its value during the entire cycle
 
-    # cdef void set_decimal_mode(self):
-    #     self._registers.P |= DECIMAL_MODE_FLAG
-
-    #     # Change all ADC and SBC opcodes to use BCD version
-    #     # For NES implementations, remove this FOR loop, but keep the flag update above
-    #     for opcode in self._adc_sbc_opcodes:
-    #         self._instructions[opcode][1] = &self.ADC_SBC_BCD
-
     # cdef void clear_decimal_mode(self):
     #     self._registers.P &= ~DECIMAL_MODE_FLAG
 
@@ -125,6 +117,14 @@ cdef class MOS6502:
     #     # For NES implementations, remove this FOR loop, but keep the flag update above
     #     for opcode in self._adc_sbc_opcodes:
     #         self._instructions[opcode][1] = &self.ADC_SBC
+
+    # cdef void set_decimal_mode(self):
+    #     self._registers.P |= DECIMAL_MODE_FLAG
+
+    #     # Change all ADC and SBC opcodes to use BCD version
+    #     # For NES implementations, remove this FOR loop, but keep the flag update above
+    #     for opcode in self._adc_sbc_opcodes:
+    #         self._instructions[opcode][1] = &self.ADC_SBC_BCD
 
     ###
     #   ADDRESSING MODES
@@ -737,29 +737,23 @@ cdef class MOS6502:
 
         self._current_instruction = NULL
 
+    cdef void SEC(self):
+        self._registers.P |= CARRY_FLAG
+        self._current_instruction = NULL
+
+    # cdef void SED(self):
+    #     self.set_decimal_mode()
+    #     self._current_instruction = NULL
+
+    cdef void SEI(self):
+        self._registers.P |= IRQ_DISABLE_FLAG
+        self._current_instruction = NULL
+
     ###
     #   GETTERS AND SETTERS
     ###
     cpdef Registers get_registers(self):
         return self._registers
 
-    cpdef unsigned char get_current_op_code(self):
-        return self._current_op_code
-
-    cpdef unsigned char get_current_data(self):
-        return self._current_data
-
-    cpdef unsigned short get_current_address(self):
-        return self._current_address
-
     cpdef void set_registers(self, Registers registers):
         self._registers = registers
-
-    cpdef void set_current_op_code(self, unsigned char op_code):
-        self._current_op_code = op_code
-
-    cpdef void set_current_data(self, unsigned char data):
-        self._current_data = data
-
-    cpdef void set_current_address(self, unsigned short address):
-        self._current_address = address
