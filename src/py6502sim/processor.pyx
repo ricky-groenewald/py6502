@@ -67,12 +67,6 @@ cdef class MOS6502:
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
         self._next_instruction = NULL
 
-        # For reference when setting/clearing BCD opcodes
-        self._adc_sbc_opcodes[:] = [
-                0x69, 0x6D, 0x65, 0x61, 0x71, 0x75, 0x7D, 0x79,
-                0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
-            ]
-
         # Define OPCODE instruction functions
         # Format:
         #   self._instructions[OPCODE] = [Addressing Mode Function, OPCODE Function]
@@ -340,14 +334,20 @@ cdef class MOS6502:
     cdef void clear_bcd_opcodes(self):
         # Change all ADC and SBC opcodes back to normal
         # For NES implementations, remove this FOR loop
-        for opcode in self._adc_sbc_opcodes:
+        for opcode in [
+                0x69, 0x6D, 0x65, 0x61, 0x71, 0x75, 0x7D, 0x79,
+                0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
+            ]:
             self._instructions[opcode][1] = &MOS6502.ADC_SBC
         # pass
 
     cdef void set_bcd_opcodes(self):
         # Change all ADC and SBC opcodes to use BCD version
         # For NES implementations, remove this FOR loop
-        for opcode in self._adc_sbc_opcodes:
+        for opcode in [
+                0x69, 0x6D, 0x65, 0x61, 0x71, 0x75, 0x7D, 0x79,
+                0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
+            ]:
             self._instructions[opcode][1] = &MOS6502.ADC_SBC_BCD
         # pass
 

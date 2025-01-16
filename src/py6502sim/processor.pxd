@@ -39,7 +39,6 @@ cdef class MOS6502:
     cdef instruction_func[256][2] _instructions
     cdef instruction_func _current_instruction
     cdef instruction_func _next_instruction
-    cdef unsigned char[16] _adc_sbc_opcodes
 
     # Getters
     cdef Registers get_registers(self)
