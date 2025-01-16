@@ -290,8 +290,13 @@ cdef class MOS6502:
         self._registers.INTERRUPT_TYPE = 2
         self._cycle_number = 0
         self._current_instruction = &MOS6502.load_op_code
+        self._next_instruction = NULL
 
     cdef void send_irq(self):
+        # IRQ fails if IRQ_DISABLE_FLAG is set
+        if self._registers.P & IRQ_DISABLE_FLAG:
+            return
+
         # IRQ can only interrupt BRK mid-cycle (TYPE = 0), and only if it's the first cycle after OPCODE read
         if self._current_instruction == &MOS6502.BRK and self._registers.INTERRUPT_TYPE == 0 and self._cycle_number == 0:
             self._registers.INTERRUPT_TYPE = 1
@@ -819,10 +824,10 @@ cdef class MOS6502:
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void BIT(self):
-        self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1) & self._registers.ACC
+        self._temp_data = self._memory_bus.execute(self._temp_address, 0, 1)
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
-            if self._temp_data
+            if self._temp_data & self._registers.ACC
             else self._registers.P | ZERO_FLAG
         )
 
@@ -833,9 +838,9 @@ cdef class MOS6502:
         )
 
         self._registers.P = (
-            self._registers.P & ~OVERFLOW_FLAG
+            self._registers.P | OVERFLOW_FLAG
             if self._temp_data & OVERFLOW_FLAG
-            else self._registers.P | OVERFLOW_FLAG
+            else self._registers.P & ~OVERFLOW_FLAG
         )
 
         self._current_instruction = NULL
@@ -925,6 +930,9 @@ cdef class MOS6502:
             self._memory_bus.execute(self._registers.PC, 0, 1)
             self._cycle_number = 1
         elif self._cycle_number == 1:
+            if not self._registers.INTERRUPT_TYPE:
+                self._registers.PC += 1
+
             self._memory_bus.execute(
                 0x100 | self._registers.S,
                 self._registers.PC >> 8,
