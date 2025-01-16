@@ -41,6 +41,7 @@ cdef class MOS6502:
         self._accumulator_addressing = False
         self._arithmetic_result = 0x0000
         self._branch_offset = 0x00
+        self._decimal_mode_was_set = False
 
         # Initialize registers with RESET values
         self._registers.OPCODE = 0x00
@@ -1500,22 +1501,21 @@ cdef class MOS6502:
             self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void PLP(self):
-        cdef bint decimal_mode_was_set
         if not self._cycle_number:
             self._cycle_number = 1
         elif self._cycle_number == 1:
             self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 2
         else:
-            decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
+            self._decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
 
             self._registers.S += 1
             self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
 
             # Check if BCD operations need to be enabled or disabled if necessary
-            if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not decimal_mode_was_set:
+            if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not self._decimal_mode_was_set:
                 self.set_bcd_opcodes()
-            elif not <bint>(self._registers.P & DECIMAL_MODE_FLAG) and decimal_mode_was_set:
+            elif not <bint>(self._registers.P & DECIMAL_MODE_FLAG) and self._decimal_mode_was_set:
                 self.clear_bcd_opcodes()
 
             self._current_instruction = &MOS6502.load_op_code # prevent PC increment
@@ -1661,8 +1661,17 @@ cdef class MOS6502:
             self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 2
         elif self._cycle_number == 2:
+            self._decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
+
             self._registers.S += 1
             self._registers.P = self._memory_bus.execute(0x100 | self._registers.S, 0, 1) | BREAK_FLAG | UNUSED_FLAG
+
+            # Check if BCD operations need to be enabled or disabled if necessary
+            if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not self._decimal_mode_was_set:
+                self.set_bcd_opcodes()
+            elif not <bint>(self._registers.P & DECIMAL_MODE_FLAG) and self._decimal_mode_was_set:
+                self.clear_bcd_opcodes()
+
             self._cycle_number = 3
         elif self._cycle_number == 3:
             self._registers.S += 1

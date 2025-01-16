@@ -33,6 +33,7 @@ cdef class MOS6502:
     cdef bint _accumulator_addressing
     cdef unsigned short _arithmetic_result
     cdef signed char _branch_offset
+    cdef bint _decimal_mode_was_set
 
     # Instruction function references
     cdef instruction_func[256][2] _instructions
