@@ -1046,8 +1046,8 @@ cdef class MOS6502:
                 return
 
         # Convert to 2's complement to subtract
-        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF) + 1
-        self._arithmetic_result = self._registers.ACC + self._temp_data
+        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF)
+        self._arithmetic_result = self._registers.ACC + self._temp_data + 1
 
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
@@ -1057,7 +1057,7 @@ cdef class MOS6502:
 
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if (self._arithmetic_result & 0x80)
+            if self._arithmetic_result & NEGATIVE_FLAG
             else self._registers.P & ~NEGATIVE_FLAG
         )
 
@@ -1071,8 +1071,8 @@ cdef class MOS6502:
 
     cdef void CPX(self):
         # Convert to 2's complement to subtract
-        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF) + 1
-        self._arithmetic_result = self._registers.X + self._temp_data
+        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF)
+        self._arithmetic_result = self._registers.X + self._temp_data + 1
 
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
@@ -1082,7 +1082,7 @@ cdef class MOS6502:
 
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if (self._arithmetic_result & 0x80)
+            if self._arithmetic_result & NEGATIVE_FLAG
             else self._registers.P & ~NEGATIVE_FLAG
         )
 
@@ -1096,8 +1096,8 @@ cdef class MOS6502:
 
     cdef void CPY(self):
         # Convert to 2's complement to subtract
-        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF) + 1
-        self._arithmetic_result = self._registers.Y + self._temp_data
+        self._temp_data = (self._memory_bus.execute(self._temp_address, 0, 1) ^ 0xFF)
+        self._arithmetic_result = self._registers.Y + self._temp_data + 1
 
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
@@ -1107,7 +1107,7 @@ cdef class MOS6502:
 
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if (self._arithmetic_result & 0x80)
+            if self._arithmetic_result & NEGATIVE_FLAG
             else self._registers.P & ~NEGATIVE_FLAG
         )
 
@@ -1256,17 +1256,17 @@ cdef class MOS6502:
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void INY(self):
-        self._registers.X -= 1
+        self._registers.Y += 1
 
         self._registers.P = (
             self._registers.P & ~ZERO_FLAG
-            if self._registers.X
+            if self._registers.Y
             else self._registers.P | ZERO_FLAG
         )
 
         self._registers.P = (
             self._registers.P | NEGATIVE_FLAG
-            if self._registers.X & NEGATIVE_FLAG
+            if self._registers.Y & NEGATIVE_FLAG
             else self._registers.P & ~NEGATIVE_FLAG
         )
 
@@ -1455,29 +1455,49 @@ cdef class MOS6502:
         self._current_instruction = NULL
 
     cdef void PHA(self):
-        self._memory_bus.execute(0x100 | self._registers.S, self._registers.ACC, 0)
-        self._registers.S -= 1
-        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+        if not self._cycle_number:
+            self._cycle_number = 1
+        else:
+            self._memory_bus.execute(0x100 | self._registers.S, self._registers.ACC, 0)
+            self._registers.S -= 1
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void PHP(self):
-        self._memory_bus.execute(0x100 | self._registers.S, self._registers.P | BREAK_FLAG | UNUSED_FLAG, 0)
-        self._registers.S -= 1
-        self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+        if not self._cycle_number:
+            self._cycle_number = 1
+        else:
+            self._memory_bus.execute(0x100 | self._registers.S, self._registers.P | BREAK_FLAG | UNUSED_FLAG, 0)
+            self._registers.S -= 1
+            self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void PLA(self):
         if not self._cycle_number:
-            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 2
         else:
             self._registers.S += 1
             self._registers.ACC = self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
             self._current_instruction = &MOS6502.load_op_code # prevent PC increment
 
     cdef void PLP(self):
         cdef bint decimal_mode_was_set
         if not self._cycle_number:
-            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
             self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.execute(0x100 | self._registers.S, 0, 1)
+            self._cycle_number = 2
         else:
             decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
 
