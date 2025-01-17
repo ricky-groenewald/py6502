@@ -45,6 +45,7 @@ cdef class MOS6502:
 
         # Initialize registers with RESET values
         self._registers.OPCODE = 0x00
+        self._registers.OPCODE_ADDR = 0x0000
         self._registers.INTERRUPT_TYPE = 0x00 # 0 = None/BRK, 1 = IRQ, 2 = RESET, 3 = NMI
         self._registers.ACC = 0x00
         self._registers.X = 0x00
@@ -318,10 +319,13 @@ cdef class MOS6502:
     cdef void load_op_code(self) except *:
         if self._registers.INTERRUPT_TYPE:
             self._registers.OPCODE = 0x00
+            # Set the opcode address to the interrupt vector
+            self._registers.OPCODE_ADDR = 0xFFFE - (2 * (self._registers.INTERRUPT_TYPE - 1))
             self._memory_bus.execute(self._registers.PC, 0, 1)
             self._current_instruction, self._next_instruction = &MOS6502.BRK, NULL
         else:
             self._registers.OPCODE = self._memory_bus.execute(self._registers.PC, 0, 1)
+            self._registers.OPCODE_ADDR = self._registers.PC
             self._current_instruction = self._instructions[self._registers.OPCODE][0]
             self._next_instruction = self._instructions[self._registers.OPCODE][1]
             if self._current_instruction is NULL:

@@ -7,6 +7,7 @@ ctypedef void (*instruction_func)(MOS6502)
 
 cdef struct Registers:
     unsigned char OPCODE # Not a real register, but used for debugging
+    unsigned short OPCODE_ADDR
     unsigned char INTERRUPT_TYPE # Not a real register, but used for debugging
                                  # 0 = None/BRK, 1 = IRQ, 2 = RESET, 3 = NMI
     unsigned char ACC
