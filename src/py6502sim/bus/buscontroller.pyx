@@ -4,8 +4,8 @@ CYTHON CONTROLLER COMPONENT CLASS IMPLEMENTATIONS
 Simulator definitions and functions for a component controller
 """
 from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
-from .component cimport Component
-from .processor cimport MOS6502, Registers
+from py6502sim.bus.component cimport Component
+from py6502sim.cpu.mos6502 cimport MOS6502, Registers
 
 class ComponentSizeError(Exception):
     """
@@ -22,7 +22,7 @@ class UnallocatedAddressError(Exception):
     Atempted to access an address not allocated to a component
     """
 
-cdef class Controller(Component):
+cdef class BusController(Component):
     """
     Class definition for an 8-bit component controller
     """

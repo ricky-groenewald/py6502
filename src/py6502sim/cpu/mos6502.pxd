@@ -1,7 +1,7 @@
 """
 CYTHON MOS6502 PROCESSOR CLASS DECLARATIONS
 """
-from .component cimport Component
+from py6502sim.bus.component cimport Component
 
 ctypedef void (*instruction_func)(MOS6502)
 

@@ -6,7 +6,7 @@ Definitions and functions for a memory component
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
 from cython cimport boundscheck, wraparound
-from .component cimport Component
+from py6502sim.bus.component cimport Component
 
 class DataSizeError(Exception):
     """

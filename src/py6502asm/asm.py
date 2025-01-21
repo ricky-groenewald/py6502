@@ -3,7 +3,6 @@
 """
 from ast import literal_eval
 import re
-import codecs
 
 # TODO:
 #   * [HIGH IMPORTANCE] TESTING!!
@@ -195,7 +194,7 @@ class Assembler:
                 raise AssemblySyntaxError('.ORG directive only accepts number literal operands')
             offset = int(operand_str)
 
-            if self._current_offset >= offset:
+            if self._current_offset > offset:
                 raise AssemblySyntaxError(
                     f'Attempting to rewind program counter offset from ${self._current_offset:04X}'
                     f' back to ${offset:04X}'

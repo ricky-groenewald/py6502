@@ -6,7 +6,7 @@ Simulator definitions and functions for the main 6502 micro processor
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
 from cython cimport boundscheck, wraparound, compiled
-from .component cimport Component
+from py6502sim.bus.component cimport Component
 
 # Compile-Time Definitions
 DEF CARRY_FLAG = 0b00000001
