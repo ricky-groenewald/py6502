@@ -29,5 +29,8 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ["py6502sim", "py6502asm"]
+packages = ["py6502sim", "py6502asm", "py6502ui"]
 package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+py6502sim = ["assets/**/*"]
