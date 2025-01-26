@@ -1,6 +1,8 @@
 from py6502sim.bus.component cimport Component
+from py6502sim.bus.buscontroller cimport BusController
 from py6502sim.graphics.textdisplay cimport Font, TextDisplay
 from importlib import resources
+from libc.string cimport memcpy
 from cython cimport boundscheck, wraparound
 from libc.stdlib cimport malloc, free
 # Colors:
@@ -18,7 +20,7 @@ DEF KBD_BUFFER_SIZE = 8
 DEF FRAME_SIZE = 256 * 240
 
 cdef class Apple1(Component):
-    def __init__(self, unsigned int size, str memory_name) -> None:
+    def __init__(self, unsigned int size, str memory_name, BusController bus_controller) -> None:
         super().__init__(size, memory_name)
 
         with resources.path('py6502sim.assets.fonts', 'sphere-1.bin') as path:
@@ -27,10 +29,16 @@ cdef class Apple1(Component):
         self.initialize_display()
         self._kbd_buffer_index = 0
         self._kbd_buffer = <unsigned char*>malloc(KBD_BUFFER_SIZE * sizeof(unsigned char))
+        self._bus_controller = bus_controller
 
     def __dealloc__(self):
         if self._kbd_buffer:
             free(self._kbd_buffer)
+
+    cpdef void clock(self):
+        for _ in range(16667):
+            self._bus_controller.clock()
+        self._text_display.update_screen()
 
     cpdef void initialize_display(self):
         self._text_display.set_background_color(BG_COLOR)
