@@ -38,7 +38,6 @@ cdef class Apple1(Component):
     cpdef void clock(self):
         for _ in range(16667):
             self._bus_controller.clock()
-        self._text_display.update_screen()
 
     cpdef void initialize_display(self):
         self._text_display.set_background_color(BG_COLOR)

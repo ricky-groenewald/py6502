@@ -2,7 +2,7 @@ from libc.stdio cimport *
 from libc.stdlib cimport malloc, free
 
 cdef class Font:
-    def __init__(self, filename, blank_zero=False):
+    def __init__(self, filename):
         self._create_character_set(filename.encode('utf-8'))
 
     def __dealloc__(self):
@@ -50,20 +50,13 @@ cdef class TextDisplay:
         self._background_color[:] = [0.0, 0.0, 0.0, 1.0]
         self._foreground_color[:] = [1.0, 1.0, 1.0, 1.0]
 
-        # Cursor setup
-        self._cursor_visible = True
-        self._cursor_size[:] = [0, 0, font.width, font.height]
-        self._cursor_color[:] = [1.0, 1.0, 1.0, 1.0]
-        self._cursor_position = 0
-
-        # Character buffer setup
+        self._cursor_rgba = <float*>malloc(font.width * font.height * 4 * sizeof(float))
+        self._cursor_pos_x = 0
+        self._cursor_pos_y = 0
+        self._cursor_last_cr_y_pos = 0
+        self._start_cursor_row = 0
         self._character_max_cols = (resolution_x - (padding_x * 2)) // font.width
         self._character_max_rows = (resolution_y - (padding_y * 2)) // font.height
-        self._character_buffer_size = self._character_max_cols * self._character_max_rows
-        self._character_buffer_start_index = 0
-        self._character_buffer_end_index = 0
-        self._character_buffer = <unsigned char*>malloc(self._character_buffer_size * sizeof(unsigned char))
-        self._character_line_count = 0
 
         self.clear_screen()
 
@@ -71,112 +64,118 @@ cdef class TextDisplay:
         if self._screen_buffer:
             free(self._screen_buffer)
 
-    cdef void update_screen(self):
-        cdef int character_index = self._character_buffer_start_index
-
-        for y in range(self._pixel_padding_y, self._resolution_y - self._pixel_padding_y, self._font.height):
-            for x in range(self._pixel_padding_x, self._resolution_x - self._pixel_padding_x):
-                if (self._character_buffer[character_index] == 0x0D) or (character_index == self._character_buffer_end_index):
-                    for i in range(x, self._resolution_x - self._pixel_padding_x):
-                        for j in range(y, y + self._font.height):
-                            for rgba_index in range(4):
-                                self._screen_buffer[((j * self._resolution_x) + i) * 4 + rgba_index] = self._background_color[rgba_index]
-
-                    if self._character_buffer[character_index] == 0x0D:
-                        character_index = (character_index + 1) % self._character_buffer_size
-                    break
-
-                for j in range(self._font.height):
-                    if self._font.get_character_pixel(self._character_buffer[character_index], (x - self._pixel_padding_x) % self._font.width, j):
-                        for rgba_index in range(4):
-                            self._screen_buffer[(((y + j) * self._resolution_x) + x) * 4 + rgba_index] = self._foreground_color[rgba_index]
-                    else:
-                        for rgba_index in range(4):
-                            self._screen_buffer[(((y + j) * self._resolution_x) + x) * 4 + rgba_index] = self._background_color[rgba_index]
-                
-                if (x - self._pixel_padding_x) % self._font.width == self._font.width - 1:
-                    character_index = (character_index + 1) % self._character_buffer_size
-
-        # Draw cursor
-        cdef int x_offset = self._character_buffer_end_index - self._character_current_line_start_index
-        if x_offset < 0:
-            x_offset += self._character_buffer_size
-        x_offset = x_offset * self._font.width + self._pixel_padding_x
-        cdef int y_offset = self._character_line_count * self._font.height + self._pixel_padding_y
-        if self._cursor_visible:
-            for i in range(x_offset, x_offset + self._font.width):
-                for j in range(y_offset, y_offset + self._font.height):
-                    if self._cursor_size[0] <= ((i - self._pixel_padding_x) % self._font.width) <= self._cursor_size[2] and self._cursor_size[1] <= ((j - self._pixel_padding_y) % self._font.height) <= self._cursor_size[3]:
-                        for rgba_index in range(4):
-                            self._screen_buffer[(((j * self._resolution_x) + i) * 4) + rgba_index] = self._cursor_color[rgba_index]
-                    else:
-                        for rgba_index in range(4):
-                            self._screen_buffer[(((j * self._resolution_x) + i) * 4) + rgba_index] = self._background_color[rgba_index]
-
     cpdef list get_screen_buffer(self):
-        return [x for x in self._screen_buffer[:self._resolution_x * self._resolution_y * 4]]
-
-    cdef void set_cursor_visible(self, bint cursor_visible):
-        self._cursor_visible = cursor_visible
+        return (
+            [x for x in self._screen_buffer[:self._resolution_x * self._pixel_padding_y * 4]] # Top padding
+            + [x for x in self._screen_buffer[self._resolution_x * (self._start_cursor_row * self._font.height + self._pixel_padding_y) * 4:self._resolution_x * (self._resolution_y - self._pixel_padding_y) * 4]] # From content y-start to bottom padding
+            + [x for x in self._screen_buffer[self._resolution_x * self._pixel_padding_y * 4:self._resolution_x * (self._start_cursor_row * self._font.height + self._pixel_padding_y) * 4]] # From top padding end to content y-start
+            + [x for x in self._screen_buffer[:self._resolution_x * self._pixel_padding_y * 4]] # Bottom padding (Same as top padding)
+        )
 
     cdef void place_character(self, unsigned char character):
-        if character == 0x08:
-            self.cursor_backspace()
-            return
-        elif character == 0x1B:
+        if character == 0x1B:
             return
 
-        self._character_buffer[self._character_buffer_end_index] = character
-        self._character_buffer_end_index = (self._character_buffer_end_index + 1) % self._character_buffer_size
-        if character == 0x0D:
-            # Handle new line
-            self._character_line_count += 1
-            self._character_current_line_start_index = self._character_buffer_end_index
-        else:
-            # Check for line wrap
-            if self._character_buffer_end_index < self._character_current_line_start_index:
-                if self._character_buffer_end_index + self._character_buffer_size - self._character_current_line_start_index == self._character_max_cols:
-                    self._character_line_count += 1
-                    self._character_current_line_start_index = self._character_buffer_end_index
+        cdef int y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+        cdef int x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
+
+        cdef int temp_offset
+        if character == 0x0D: # CR
+            for y in range(self._font.height):
+                for x in range(self._font.width):
+                    temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                    self._screen_buffer[temp_offset] = self._background_color[0]
+                    self._screen_buffer[temp_offset + 1] = self._background_color[1]
+                    self._screen_buffer[temp_offset + 2] = self._background_color[2]
+                    self._screen_buffer[temp_offset + 3] = self._background_color[3]
+
+            self._cursor_pos_y = (self._cursor_pos_y + 1) % self._character_max_rows
+            self._cursor_pos_x = 0
+            self._cursor_last_cr_y_pos = self._cursor_pos_y
+
+            if self._cursor_pos_y == self._start_cursor_row:
+                # If cursor is at the top of the screen, scroll and clear cursor line
+                self._start_cursor_row = (self._start_cursor_row + 1) % self._character_max_rows
+                y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+                for y in range(self._font.height):
+                    for x in range(self._pixel_padding_x, self._resolution_x - self._pixel_padding_x):
+                        temp_offset = ((y_offset + y) * self._resolution_x + x) * 4
+                        self._screen_buffer[temp_offset] = self._background_color[0]
+                        self._screen_buffer[temp_offset + 1] = self._background_color[1]
+                        self._screen_buffer[temp_offset + 2] = self._background_color[2]
+                        self._screen_buffer[temp_offset + 3] = self._background_color[3]
+
+        elif character == 0x08: # Backspace
+            if self._cursor_pos_x == 0 and self._cursor_pos_y == self._cursor_last_cr_y_pos:
+                # Can't backspace CR
+                return
+
+            for y in range(self._font.height):
+                for x in range(self._font.width):
+                    temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                    self._screen_buffer[temp_offset] = self._background_color[0]
+                    self._screen_buffer[temp_offset + 1] = self._background_color[1]
+                    self._screen_buffer[temp_offset + 2] = self._background_color[2]
+                    self._screen_buffer[temp_offset + 3] = self._background_color[3]
+            
+            if self._cursor_pos_x > 0:
+                self._cursor_pos_x -= 1
             else:
-                if self._character_buffer_end_index - self._character_current_line_start_index == self._character_max_cols:
-                    self._character_line_count += 1
-                    self._character_current_line_start_index = self._character_buffer_end_index
+                self._cursor_pos_x = self._character_max_cols - 1
+                self._cursor_pos_y = (self._character_max_rows + self._cursor_pos_y - 1) % self._character_max_rows
 
-        if self._character_line_count == self._character_max_rows:
-            # If line count is maxed out, move start index to next line
-            self._character_line_count -= 1
+        else: # Any other character
+            for y in range(self._font.height):
+                for x in range(self._font.width):
+                    temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                    if self._font.get_character_pixel(character, x, y):
+                        self._screen_buffer[temp_offset] = self._foreground_color[0]
+                        self._screen_buffer[temp_offset + 1] = self._foreground_color[1]
+                        self._screen_buffer[temp_offset + 2] = self._foreground_color[2]
+                        self._screen_buffer[temp_offset + 3] = self._foreground_color[3]
+                    else:
+                        self._screen_buffer[temp_offset] = self._background_color[0]
+                        self._screen_buffer[temp_offset + 1] = self._background_color[1]
+                        self._screen_buffer[temp_offset + 2] = self._background_color[2]
+                        self._screen_buffer[temp_offset + 3] = self._background_color[3]
 
-            # Find the next line wrap or CR, whichever comes first
-            for index in range(self._character_buffer_start_index, self._character_buffer_start_index + self._character_max_cols):
-                if self._character_buffer[index % self._character_buffer_size] == 0x0D:
-                    break
-            self._character_buffer_start_index = (index + 1) % self._character_buffer_size
+            self._cursor_pos_x = (self._cursor_pos_x + 1) % self._character_max_cols
+            if self._cursor_pos_x == 0:
+                self._cursor_pos_y = (self._cursor_pos_y + 1) % self._character_max_rows
+                if self._cursor_pos_y == self._start_cursor_row:
+                    # If cursor is at the top of the screen, scroll and clear cursor line
+                    self._start_cursor_row = (self._start_cursor_row + 1) % self._character_max_rows
+                    y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+                    for y in range(self._font.height):
+                        for x in range(self._pixel_padding_x, self._resolution_x - self._pixel_padding_x):
+                            temp_offset = ((y_offset + y) * self._resolution_x + x) * 4
+                            self._screen_buffer[temp_offset] = self._background_color[0]
+                            self._screen_buffer[temp_offset + 1] = self._background_color[1]
+                            self._screen_buffer[temp_offset + 2] = self._background_color[2]
+                            self._screen_buffer[temp_offset + 3] = self._background_color[3]
 
-    cdef void cursor_backspace(self):
-        if (self._character_buffer_end_index == self._character_buffer_start_index) and not self._character_line_count:
-            # Screen is empty, do nothing
-            return
-
-        cdef previous_index = (self._character_buffer_size + self._character_buffer_end_index - 1) % self._character_buffer_size
-        if self._character_buffer[previous_index] != 0x0D:
-            if self._character_buffer_end_index == self._character_current_line_start_index:
-                self._character_line_count -= 1
-                # Find previous line wrap or CR, whichever comes first
-                for index in range(1, self._character_max_cols + 1):
-                    if self._character_buffer[(self._character_current_line_start_index + self._character_buffer_size - index) % self._character_buffer_size] == 0x0D:
-                        break
-                self._character_current_line_start_index = (self._character_current_line_start_index + self._character_buffer_size - index) % self._character_buffer_size
-            self._character_buffer_end_index = previous_index
-        # else:
-            # Can't backspace CR
-            # pass
-        
+        # Draw cursor
+        y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+        x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
+        cdef int temp_cursor_offset
+        for y in range(self._font.height):
+            for x in range(self._font.width):
+                temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                temp_cursor_offset = (y * self._font.width + x) * 4
+                self._screen_buffer[temp_offset] = self._cursor_rgba[temp_cursor_offset]
+                self._screen_buffer[temp_offset + 1] = self._cursor_rgba[temp_cursor_offset + 1]
+                self._screen_buffer[temp_offset + 2] = self._cursor_rgba[temp_cursor_offset + 2]
+                self._screen_buffer[temp_offset + 3] = self._cursor_rgba[temp_cursor_offset + 3]
 
     cdef void clear_screen(self):
-        self._character_buffer_start_index = 0
-        self._character_buffer_end_index = 0
-        self._character_line_count = 0
+        cdef unsigned int offset
+        for y in range(self._resolution_y):
+            for x in range(self._resolution_x):
+                offset = (y * self._resolution_x + x) * 4
+                self._screen_buffer[offset] = self._background_color[0]
+                self._screen_buffer[offset + 1] = self._background_color[1]
+                self._screen_buffer[offset + 2] = self._background_color[2]
+                self._screen_buffer[offset + 3] = self._background_color[3]
 
     cdef void set_background_color(self, float[4] color):
         for index in range(4):
@@ -187,6 +186,15 @@ cdef class TextDisplay:
             self._foreground_color[index] = color[index]
 
     cdef void set_cursor(self, unsigned char[4] size, float[4] color):
-        for index in range(4):
-            self._cursor_size[index] = size[index]
-            self._cursor_color[index] = color[index]
+        for y in range(self._font.height):
+            for x in range(self._font.width):
+                if size[0] <= x < size[2] and size[1] <= y < size[3]:
+                    self._cursor_rgba[(y * self._font.width + x) * 4] = color[0]
+                    self._cursor_rgba[(y * self._font.width + x) * 4 + 1] = color[1]
+                    self._cursor_rgba[(y * self._font.width + x) * 4 + 2] = color[2]
+                    self._cursor_rgba[(y * self._font.width + x) * 4 + 3] = color[3]
+                else:
+                    self._cursor_rgba[(y * self._font.width + x) * 4] = self._background_color[0]
+                    self._cursor_rgba[(y * self._font.width + x) * 4 + 1] = self._background_color[1]
+                    self._cursor_rgba[(y * self._font.width + x) * 4 + 2] = self._background_color[2]
+                    self._cursor_rgba[(y * self._font.width + x) * 4 + 3] = self._background_color[3]
