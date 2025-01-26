@@ -42,7 +42,7 @@ cdef class Apple1(Component):
     cpdef void initialize_display(self):
         self._text_display.set_background_color(BG_COLOR)
         self._text_display.set_foreground_color(FG_COLOR)
-        self._text_display.set_cursor([0, 1, 5, 8], FG_COLOR)
+        self._text_display.set_cursor([0, 1, 5, 8], FG_COLOR, 1)
         self._text_display.clear_screen()
 
     cpdef bint add_character_to_kb_buffer(self, unsigned char character):

@@ -55,6 +55,9 @@ cdef class TextDisplay:
         self._cursor_pos_y = 0
         self._cursor_last_cr_y_pos = 0
         self._start_cursor_row = 0
+        self._cursor_mode = 1 # 0 = off, 1 = blinking, 2 = solid
+        self._cursor_blink_timer = 0
+        self._cursor_visible = True
         self._character_max_cols = (resolution_x - (padding_x * 2)) // font.width
         self._character_max_rows = (resolution_y - (padding_y * 2)) // font.height
 
@@ -65,6 +68,13 @@ cdef class TextDisplay:
             free(self._screen_buffer)
 
     cpdef list get_screen_buffer(self):
+        if self._cursor_mode == 1:
+            self._cursor_blink_timer += 1
+            if self._cursor_blink_timer == 30:
+                self._cursor_visible = not self._cursor_visible
+                self._cursor_blink_timer = 0
+                self.redraw_cursor()
+
         return (
             [x for x in self._screen_buffer[:self._resolution_x * self._pixel_padding_y * 4]] # Top padding
             + [x for x in self._screen_buffer[self._resolution_x * (self._start_cursor_row * self._font.height + self._pixel_padding_y) * 4:self._resolution_x * (self._resolution_y - self._pixel_padding_y) * 4]] # From content y-start to bottom padding
@@ -79,7 +89,7 @@ cdef class TextDisplay:
         cdef int y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
         cdef int x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
 
-        cdef int temp_offset
+        cdef int temp_offset, temp_cursor_offset
         if character == 0x0D: # CR
             for y in range(self._font.height):
                 for x in range(self._font.width):
@@ -155,17 +165,19 @@ cdef class TextDisplay:
                             self._screen_buffer[temp_offset + 3] = self._background_color[3]
 
         # Draw cursor
-        y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
-        x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
-        cdef int temp_cursor_offset
-        for y in range(self._font.height):
-            for x in range(self._font.width):
-                temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
-                temp_cursor_offset = (y * self._font.width + x) * 4
-                self._screen_buffer[temp_offset] = self._cursor_rgba[temp_cursor_offset]
-                self._screen_buffer[temp_offset + 1] = self._cursor_rgba[temp_cursor_offset + 1]
-                self._screen_buffer[temp_offset + 2] = self._cursor_rgba[temp_cursor_offset + 2]
-                self._screen_buffer[temp_offset + 3] = self._cursor_rgba[temp_cursor_offset + 3]
+        if self._cursor_mode:
+            self._cursor_blink_timer = 0
+            self._cursor_visible = True
+            y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+            x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
+            for y in range(self._font.height):
+                for x in range(self._font.width):
+                    temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                    temp_cursor_offset = (y * self._font.width + x) * 4
+                    self._screen_buffer[temp_offset] = self._cursor_rgba[temp_cursor_offset]
+                    self._screen_buffer[temp_offset + 1] = self._cursor_rgba[temp_cursor_offset + 1]
+                    self._screen_buffer[temp_offset + 2] = self._cursor_rgba[temp_cursor_offset + 2]
+                    self._screen_buffer[temp_offset + 3] = self._cursor_rgba[temp_cursor_offset + 3]
 
     cdef void clear_screen(self):
         cdef unsigned int offset
@@ -185,7 +197,37 @@ cdef class TextDisplay:
         for index in range(4):
             self._foreground_color[index] = color[index]
 
-    cdef void set_cursor(self, unsigned char[4] size, float[4] color):
+    cdef void redraw_cursor(self):
+        cdef int y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+        cdef int x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
+        cdef int temp_offset, temp_cursor_offset
+
+        if self._cursor_visible:
+            for y in range(self._font.height):
+                for x in range(self._font.width):
+                    temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                    temp_cursor_offset = (y * self._font.width + x) * 4
+                    self._screen_buffer[temp_offset] = self._cursor_rgba[temp_cursor_offset]
+                    self._screen_buffer[temp_offset + 1] = self._cursor_rgba[temp_cursor_offset + 1]
+                    self._screen_buffer[temp_offset + 2] = self._cursor_rgba[temp_cursor_offset + 2]
+                    self._screen_buffer[temp_offset + 3] = self._cursor_rgba[temp_cursor_offset + 3]
+        else:
+            for y in range(self._font.height):
+                for x in range(self._font.width):
+                    temp_offset = ((y_offset + y) * self._resolution_x + x_offset + x) * 4
+                    self._screen_buffer[temp_offset] = self._background_color[0]
+                    self._screen_buffer[temp_offset + 1] = self._background_color[1]
+                    self._screen_buffer[temp_offset + 2] = self._background_color[2]
+                    self._screen_buffer[temp_offset + 3] = self._background_color[3]
+
+    cdef void set_cursor(self, unsigned char[4] size, float[4] color, unsigned char cursor_mode):
+        self._cursor_mode = cursor_mode
+        if cursor_mode:
+            self._cursor_blink_timer = 0
+            self._cursor_visible = True
+        else:
+            self._cursor_visible = False
+
         for y in range(self._font.height):
             for x in range(self._font.width):
                 if size[0] <= x < size[2] and size[1] <= y < size[3]:
@@ -198,3 +240,5 @@ cdef class TextDisplay:
                     self._cursor_rgba[(y * self._font.width + x) * 4 + 1] = self._background_color[1]
                     self._cursor_rgba[(y * self._font.width + x) * 4 + 2] = self._background_color[2]
                     self._cursor_rgba[(y * self._font.width + x) * 4 + 3] = self._background_color[3]
+
+        self.redraw_cursor()

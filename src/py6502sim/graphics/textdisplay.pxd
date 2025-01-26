@@ -20,6 +20,9 @@ cdef class TextDisplay:
     cdef unsigned char _cursor_pos_y
     cdef unsigned char _cursor_last_cr_y_pos
     cdef unsigned char _start_cursor_row
+    cdef unsigned char _cursor_mode  # 0 = off, 1 = blinking, 2 = solid
+    cdef unsigned char _cursor_blink_timer
+    cdef bint _cursor_visible
     cdef float* _screen_buffer
     cdef unsigned char _character_max_cols
     cdef unsigned char _character_max_rows
@@ -27,8 +30,9 @@ cdef class TextDisplay:
     cdef float[4] _foreground_color #RGBA
 
     cpdef list get_screen_buffer(self)
-    cdef void set_cursor(self, unsigned char[4] size, float[4] color)
+    cdef void set_cursor(self, unsigned char[4] size, float[4] color, unsigned char cursor_mode)
     cdef void place_character(self, unsigned char character)
     cdef void clear_screen(self)
     cdef void set_background_color(self, float[4] color)
     cdef void set_foreground_color(self, float[4] color)
+    cdef void redraw_cursor(self)
