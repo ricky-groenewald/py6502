@@ -178,6 +178,8 @@ cdef class TextDisplay:
                     self._screen_buffer[temp_offset + 1] = self._cursor_rgba[temp_cursor_offset + 1]
                     self._screen_buffer[temp_offset + 2] = self._cursor_rgba[temp_cursor_offset + 2]
                     self._screen_buffer[temp_offset + 3] = self._cursor_rgba[temp_cursor_offset + 3]
+        elif character == 0x08:
+            self.redraw_cursor()
 
     cdef void clear_screen(self):
         cdef unsigned int offset
