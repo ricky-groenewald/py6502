@@ -26,7 +26,7 @@ cdef class Memory(Component):
         super().__init__(size, memory_name)
         self._data = <unsigned char *>malloc(self.get_size() * sizeof(unsigned char))
         if self._data is NULL:
-            raise MemoryError('Failed to allocate memory for the data array.')
+            raise MemoryError(f'[{self.get_name()}] Failed to allocate memory for the data array.')
         memset(self._data, 0, self.get_size() * sizeof(unsigned char))
 
         self._read_only = read_only
@@ -64,20 +64,47 @@ cdef class Memory(Component):
 
         return str_output
 
-    def set_data_from_array(self, data: list[int]) -> None:
+    def set_data(self, data: list[int], start_address: int=0x0000) -> None:
         """
-        Overwrites memory with an identically sized data array.
+        Writes data to memory starting at the specified address.
 
-        Bypasses "read_only" value.
+        Args:
+            data: List of bytes to write to memory
+            start_address: Starting memory address (default: 0x0000)
 
-        Arguments:
-            - data (list[int])
+        Raises:
+            DataSizeError: If data would exceed available memory space
+        
+        Note:
+            This method bypasses read-only protection
         """
-        if len(data) != self.get_size():
+        if len(data) + start_address > self.get_size():
             raise DataSizeError(
-                f'[{self.get_name()}] Cannot upload data into memory. '
-                f'Expected {self.get_size()} bytes, but received {len(data)} bytes.'
+                f'[{self.get_name()}] Set data failed: {len(data)} bytes at offset '
+                f'0x{start_address:04X} exceeds available memory size of {self.get_size()} bytes'
             )
 
         for i, byte in enumerate(data):
-            self._data[i] = <unsigned char>byte
+            self._data[start_address + i] = <unsigned char>byte
+
+    def get_data(self, start_address: int, size: int) -> list[int]:
+        """
+        Reads a block of data from memory.
+
+        Args:
+            start_address: Starting memory address to read from
+            size: Number of bytes to read
+
+        Returns:
+            List of bytes read from memory
+
+        Raises:
+            DataSizeError: If requested range would exceed available memory space
+        """
+        if start_address + size > self.get_size():
+            raise DataSizeError(
+                f'[{self.get_name()}] Get data failed: {size} bytes at offset '
+                f'0x{start_address:04X} exceeds available memory size of {self.get_size()} bytes'
+            )
+
+        return [x for x in self._data[start_address:start_address + size]]

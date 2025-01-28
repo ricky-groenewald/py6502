@@ -23,6 +23,7 @@ cdef class BusController(Component):
     cdef unsigned char _current_data_bus
     cdef unsigned short _current_address_bus
     cdef bint _current_read_write
+    cdef bint _raise_on_unmapped_access
 
     cpdef void add_component(self, Component component, unsigned int address_start) except *
 

@@ -26,7 +26,7 @@ cdef class BusController(Component):
     """
     Class definition for an 8-bit component controller
     """
-    def __init__(self, str controller_name, MOS6502 processor) -> None:
+    def __init__(self, str controller_name, MOS6502 processor, bint raise_on_unmapped_access=True) -> None:
         # Controllers will always only have 16-bit address space
         super().__init__(0x10000, controller_name)
         self._processor = processor
@@ -34,6 +34,7 @@ cdef class BusController(Component):
         self._current_data_bus = 0
         self._current_address_bus = 0
         self._current_read_write = True
+        self._raise_on_unmapped_access = raise_on_unmapped_access
 
     def __dealloc__(self) -> None:
         for i in range(0x10000):
@@ -94,9 +95,12 @@ cdef class BusController(Component):
         self.address_check(address) # Assert address within controller's address range
             
         if self._component_address_map[address].component is NULL:
-            raise UnallocatedAddressError(
-                f'[{self.get_name()}] Address not allocated to a component: 0x{address:04X}'
-            )
+            if self._raise_on_unmapped_access:
+                raise UnallocatedAddressError(
+                    f'[{self.get_name()}] Address not allocated to a component: 0x{address:04X}'
+                )
+            else:
+                return 0
 
         cdef Component component = <Component>self._component_address_map[address].component
 
@@ -109,18 +113,3 @@ cdef class BusController(Component):
         )
 
         return self._current_data_bus
-
-    def _detail_str_output(self) -> str:
-        last_component = None
-        first_addr = 0
-        output_str = 'Component list:\n'
-        for i in range(self.get_size()):
-            if self._component_address_map[i].component is NULL:
-                if last_component:
-                    output_str += f'\t{last_component}: 0x{first_addr:04X} - 0x{i-1:04X}\n'
-                    last_component = None
-            elif last_component != (<Component>self._component_address_map[i].component).get_name():
-                if last_component:
-                    output_str += f'\t{last_component}: 0x{first_addr:04X} - 0x{i-1:04X}\n'
-                last_component = (<Component>self._component_address_map[i].component).get_name()
-                first_addr = i

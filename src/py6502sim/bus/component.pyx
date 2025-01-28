@@ -44,7 +44,7 @@ cdef class Component:
         Arguments:
             - address (unsigned int)
         """
-        if not address < self._size:
+        if address >= self._size:
             raise AddressOutOfRange(
                 f'[{self._name}] Invalid address accessed: 0x{address:X}.'
                 f' Max address is: 0x{self._size - 1:X}.'
@@ -96,16 +96,3 @@ cdef class Component:
             Byte value of the data written to the address
         """
         raise NotImplementedError("Subclass must implement this method")
-
-    def _detail_str_output(self) -> str:
-        raise NotImplementedError("Subclass must implement this method")
-
-    def __str__(self) -> str:
-        str_output = (
-            f'Component name: {self.get_name()}\n'
-            f'Component type: {type(self).__name__}\n'
-            f'Internal address range: 0x0 - 0x{self.get_size() - 1:X}\n'
-            f'{self._detail_str_output()}'
-        )
-
-        return str_output
