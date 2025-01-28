@@ -616,13 +616,17 @@ class Assembler:
         if not asm_string.strip():
             return
 
+        # We pass case-sensitive string in first to parse numbers to decimal
+        # After parsing is complete, we will convert to uppercase
+        asm_string = self._parse_numbers(asm_string.strip()).upper()
+
         # Find comment index
+        # We only find comments after parsing is complete so that ";" in a string
+        # will not be mistaken for a comment
         comment_index = asm_string.find(';')
         comment_index = len(asm_string) if comment_index < 0 else comment_index
 
-        # We pass case-sensitive string in first to parse numbers to decimal
-        # After parsing is complete, we will convert to uppercase
-        processed_string = self._parse_numbers(asm_string[:comment_index].strip()).upper()
+        processed_string = asm_string[:comment_index]
 
         # Return on empty string
         if not processed_string:
