@@ -13,4 +13,5 @@ cdef class Apple1(Component):
     cdef BusController _bus_controller
     cpdef void initialize_display(self)
     cpdef bint add_character_to_kb_buffer(self, unsigned char character)
+    cpdef void clear_kbd_buffer(self)
     cpdef void clock(self)

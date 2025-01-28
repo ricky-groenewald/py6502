@@ -52,6 +52,9 @@ cdef class Apple1(Component):
             return True
         return False
 
+    cpdef void clear_kbd_buffer(self):
+        self._kbd_buffer_index = 0
+
     def get_screen_buffer(self):
         return self._text_display.get_screen_buffer()
 
