@@ -35,7 +35,7 @@ cdef class Font:
 
         free(buffer)
 
-    cdef bint get_character_pixel(self, unsigned char character, unsigned char x, unsigned char y):
+    cdef inline bint get_character_pixel(self, unsigned char character, unsigned char x, unsigned char y):
         return self.character_set[(character * self.height + y) * self.width + x]
 
 cdef class TextDisplay:

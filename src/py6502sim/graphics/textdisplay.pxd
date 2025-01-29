@@ -7,7 +7,7 @@ cdef class Font:
     cdef unsigned char set_size
 
     cpdef void _create_character_set(self, char* filename) except *
-    cdef bint get_character_pixel(self, unsigned char character, unsigned char x, unsigned char y)
+    cdef inline bint get_character_pixel(self, unsigned char character, unsigned char x, unsigned char y)
 
 cdef class TextDisplay:
     cdef Font _font
