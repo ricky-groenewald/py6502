@@ -15,7 +15,6 @@ cdef class TextDisplay:
     cdef unsigned int _resolution_y
     cdef unsigned char _pixel_padding_x
     cdef unsigned char _pixel_padding_y
-    cdef float* _cursor_rgba
     cdef unsigned char _cursor_pos_x
     cdef unsigned char _cursor_pos_y
     cdef unsigned char _cursor_last_cr_y_pos
@@ -23,11 +22,11 @@ cdef class TextDisplay:
     cdef unsigned char _cursor_mode  # 0 = off, 1 = blinking, 2 = solid
     cdef unsigned char _cursor_blink_timer
     cdef bint _cursor_visible
-    cdef float* _screen_buffer
+    cdef unsigned char* _cursor_pixel_map
+    cdef unsigned char[240][256] _screen_buffer # 240 rows, 256 columns
     cdef unsigned char _character_max_cols
     cdef unsigned char _character_max_rows
-    cdef float[4] _background_color #RGBA
-    cdef float[4] _foreground_color #RGBA
+    cdef float[3][4] _colors #RGBA - 0 = background, 1 = foreground, 2 = cursor
 
     cpdef list get_screen_buffer(self)
     cdef void set_cursor(self, unsigned char[4] size, float[4] color, unsigned char cursor_mode)
