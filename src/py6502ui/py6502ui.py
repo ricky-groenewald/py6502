@@ -3,6 +3,7 @@ from time import perf_counter, sleep
 from py6502sim.peripheral import Apple1
 from py6502sim.cpu import MOS6502
 from py6502sim.bus import BusController, Memory
+from py6502asm.asm import INSTRUCTION_MAP
 
 class Py6502UI:
     def __init__(self, rom_data):
@@ -26,13 +27,37 @@ class Py6502UI:
         self.bus_controller = BusController("Bus Controller", self.processor)
         self.bus_controller.add_component(self.ram, 0x0000)
         self.bus_controller.add_component(self.rom, 0xFF00)
-        self.apple1 = Apple1(4, "Apple 1", self.bus_controller)
+        self.apple1 = Apple1("Apple 1", self.bus_controller)
         self.bus_controller.add_component(self.apple1, 0xD010)
         self.bus_controller.send_reset()
         self.key_buffer = []
         self.sim_running = False
         self.mem_monitor_start_page = 0x00
         self.mem_monitor_end_page = 0x00
+        self.opcode_disasm = {}
+        self.set_up_opcode_disasm()
+
+    def set_up_opcode_disasm(self):
+        mnemonic_list = [
+            'imm',
+            'abs',
+            'zp',
+            'acc',
+            'imp',
+            '(ind,X)',
+            '(ind),Y',
+            'zp,X',
+            'abs,X',
+            'abs,Y',
+            'rel',
+            '(ind)',
+            'zp,Y'
+        ]
+        for opcode_label, opcode_data in INSTRUCTION_MAP.items():
+            for i, opcode in enumerate(opcode_data):
+                if opcode is not None:
+                    self.opcode_disasm[opcode] = f'{opcode_label} {mnemonic_list[i]}'
+        
 
     def key_pressed_handler(self, sender, app_data, user_data):
         if not self.sim_running:
@@ -159,7 +184,7 @@ class Py6502UI:
         dpg.set_value("status_i_flag", f"I:{(registers['P'] & 0b00000100) >> 2:01b}")
         dpg.set_value("status_z_flag", f"Z:{(registers['P'] & 0b00000010) >> 1:01b}")
         dpg.set_value("status_c_flag", f"C:{registers['P'] & 0b00000001:01b}")
-        dpg.set_value("reg_opcode", f"{registers['OPCODE']:02X}")
+        dpg.set_value("reg_opcode", f"{registers['OPCODE']:02X} ({self.opcode_disasm[registers['OPCODE']]})")
         dpg.set_value("reg_opcode_addr", f"{registers['OPCODE_ADDR']:04X}")
 
     def update_memory_monitor(self):
@@ -227,27 +252,7 @@ class Py6502UI:
             with open(file_path, 'rb') as f:
                 data = f.read()
                 
-                # Calculate which pages we need to write to
-                start_page = start_address >> 8
-                start_offset = start_address & 0xFF
-                
-                # Handle first page (might be partial)
-                first_page = [0] * 256
-                first_page_bytes = min(len(data), 256 - start_offset)
-                first_page[start_offset:start_offset + first_page_bytes] = data[:first_page_bytes]
-                self.ram.set_page_data_from_array(start_page, first_page)
-                
-                # Handle remaining pages
-                remaining_data = data[first_page_bytes:]
-                current_page = start_page + 1
-                
-                while remaining_data:
-                    page_data = [0] * 256
-                    bytes_to_copy = min(256, len(remaining_data))
-                    page_data[:bytes_to_copy] = remaining_data[:bytes_to_copy]
-                    self.ram.set_page_data_from_array(current_page, page_data)
-                    remaining_data = remaining_data[bytes_to_copy:]
-                    current_page += 1
+                self.ram.set_data(list(data), start_address)
                     
                 self.update_memory_monitor()
                 dpg.hide_item("load_binary_window")

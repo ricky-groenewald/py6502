@@ -20,8 +20,8 @@ DEF KBD_BUFFER_SIZE = 8
 DEF FRAME_SIZE = 256 * 240
 
 cdef class Apple1(Component):
-    def __init__(self, unsigned int size, str memory_name, BusController bus_controller) -> None:
-        super().__init__(size, memory_name)
+    def __init__(self, str memory_name, BusController bus_controller) -> None:
+        super().__init__(4, memory_name)
 
         with resources.path('py6502sim.assets.fonts', 'sphere-1.bin') as path:
             self._text_display = TextDisplay(256, 240, 8, 8, Font(str(path)))
