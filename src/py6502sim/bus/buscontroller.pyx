@@ -4,6 +4,7 @@ CYTHON CONTROLLER COMPONENT CLASS IMPLEMENTATIONS
 Simulator definitions and functions for a component controller
 """
 from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
+from cython cimport boundscheck, wraparound
 from py6502sim.bus.component cimport Component
 from py6502sim.cpu.mos6502 cimport MOS6502, Registers
 
@@ -91,25 +92,53 @@ cdef class BusController(Component):
     def get_bus_values(self):
         return self._current_address_bus, self._current_data_bus, self._current_read_write
 
-    cpdef unsigned char execute(self, unsigned int address, unsigned char data, bint read_write_bar) except *:
-        self.address_check(address) # Assert address within controller's address range
-            
-        if self._component_address_map[address].component is NULL:
+    # Wraparound disabled since address is strictly positive
+    # Bounds checking disabled since short address is always within bus controller's address range
+    @boundscheck(False)
+    @wraparound(False)
+    cdef unsigned char read(self, unsigned short address):
+        self._current_read_write = 1
+        self._current_address_bus = address
+
+        cdef MappedAddress mapped_address = self._component_address_map[address]
+
+        if mapped_address.component is NULL:
             if self._raise_on_unmapped_access:
                 raise UnallocatedAddressError(
                     f'[{self.get_name()}] Address not allocated to a component: 0x{address:04X}'
                 )
             else:
+                self._current_data_bus = 0
                 return 0
 
-        cdef Component component = <Component>self._component_address_map[address].component
+        self._current_data_bus = (<Component>mapped_address.component).read(
+            mapped_address.internal_address,
+        )
 
-        self._current_read_write = read_write_bar
+        return self._current_data_bus
+
+    # Wraparound disabled since address is strictly positive
+    # Bounds checking disabled since short address is always within bus controller's address range
+    @boundscheck(False)
+    @wraparound(False)
+    cdef unsigned char write(self, unsigned short address, unsigned char data):
+        self._current_read_write = 0
         self._current_address_bus = address
-        self._current_data_bus = component.execute(
-            self._component_address_map[address].internal_address,
-            data,
-            read_write_bar
+
+        cdef MappedAddress mapped_address = self._component_address_map[address]
+
+        if mapped_address.component is NULL:
+            if self._raise_on_unmapped_access:
+                raise UnallocatedAddressError(
+                    f'[{self.get_name()}] Address not allocated to a component: 0x{address:04X}'
+                )
+            else:
+                self._current_data_bus = 0
+                return 0
+
+        self._current_data_bus = (<Component>mapped_address.component).write(
+            mapped_address.internal_address,
+            data
         )
 
         return self._current_data_bus

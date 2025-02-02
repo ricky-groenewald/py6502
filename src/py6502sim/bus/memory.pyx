@@ -36,33 +36,21 @@ cdef class Memory(Component):
             free(self._data)
 
     # Wraparound disabled since address is strictly positive
-    # Bounds checking disabled since _read should only ever be accessed through "execute"
+    # Bounds checking disabled since read should only be accessed through the bus controller
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char _read(self, unsigned int address):
+    cdef inline unsigned char read(self, unsigned short address):
         return self._data[address]
 
     # Wraparound disabled since address is strictly positive
-    # Bounds checking disabled since _read should only ever be accessed through "execute"
+    # Bounds checking disabled since write should only be accessed through the bus controller
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char _write(self, unsigned int address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data):
         if not self._read_only:
             self._data[address] = data
 
-        return self._data[address]
-
-    def _detail_str_output(self) -> str:
-        str_output = 'Data content:'
-
-        for offset in range(0, self.get_size(), 16):
-            str_output += f'\n0x{offset:X}: '
-
-            str_output += ' '.join([f'{byte:02X}' for byte in self._data[offset:offset+8]])
-            str_output += '    '
-            str_output += ' '.join([f'{byte:02X}' for byte in self._data[offset+8:offset+16]])
-
-        return str_output
+        return data
 
     def set_data(self, data: list[int], start_address: int=0x0000) -> None:
         """

@@ -12,7 +12,7 @@ Struct holding the target component and address for a given mapped address
 """
 cdef struct MappedAddress:
     PyObject* component
-    unsigned int internal_address
+    unsigned short internal_address
 
 cdef class BusController(Component):
     """

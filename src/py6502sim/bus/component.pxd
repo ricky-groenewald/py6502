@@ -7,7 +7,5 @@ cdef class Component:
     cdef readonly str _name
     cdef inline str get_name(self)
     cdef inline unsigned int get_size(self)
-    cdef void address_check(self, unsigned int address) except *
-    cpdef unsigned char execute(self, unsigned int address, unsigned char data, bint read_write_bar) except *
-    cdef unsigned char _read(self, unsigned int address)
-    cdef unsigned char _write(self, unsigned int address, unsigned char data)
+    cdef unsigned char read(self, unsigned short address)
+    cdef unsigned char write(self, unsigned short address, unsigned char data)

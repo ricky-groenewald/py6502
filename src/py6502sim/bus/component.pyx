@@ -37,44 +37,15 @@ cdef class Component:
         """
         return self._size
 
-    cdef void address_check(self, unsigned int address) except *:
-        """
-        Check if an address is within the component's address range
-
-        Arguments:
-            - address (unsigned int)
-        """
-        if address >= self._size:
-            raise AddressOutOfRange(
-                f'[{self._name}] Invalid address accessed: 0x{address:X}.'
-                f' Max address is: 0x{self._size - 1:X}.'
-            )
-
-    cpdef unsigned char execute(self, unsigned int address, unsigned char data, bint read_write_bar) except *:
-        """
-        Execute an instruction given values for the address and data
-
-        Arguments:
-            - address (unsigned int)
-            - data (unsigned char)
-            - read_write_bar (bool): Read on 1, Write on 0
-
-        Returns:
-            Byte value of the data bus after the instruction
-        """
-        self.address_check(address)
-
-        return self._read(address) if read_write_bar else self._write(address, data)
-
     # Abstract class
-    cdef unsigned char _read(self, unsigned int address):
+    cdef unsigned char read(self, unsigned short address):
         """
         SHOULD NOT BE ACCESSED PUBLICLY
 
         Read data from an address
 
         Arguments:
-            - address (unsigned int)
+            - address (unsigned short)
 
         Returns:
             Byte value of the data at the specified address
@@ -82,15 +53,15 @@ cdef class Component:
         raise NotImplementedError("Subclass must implement this method")
 
     # Abstract class
-    cdef unsigned char _write(self, unsigned int address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data):
         """
         SHOULD NOT BE ACCESSED PUBLICLY
 
         Write data to an address
 
         Arguments:
-            - address (uint)
-            - data (char)
+            - address (unsigned short)
+            - data (unsigned char)
 
         Returns:
             Byte value of the data written to the address

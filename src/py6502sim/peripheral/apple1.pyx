@@ -37,7 +37,7 @@ cdef class Apple1(Component):
 
     cpdef void clock(self):
         for _ in range(16667):
-            self._bus_controller.clock()
+            self._bus_controller._processor.clock()
 
     cpdef void initialize_display(self):
         self._text_display.set_background_color(BG_COLOR)
@@ -59,10 +59,10 @@ cdef class Apple1(Component):
         return self._text_display.get_screen_buffer()
 
     # Wraparound disabled since address is strictly positive
-    # Bounds checking disabled since _read should only ever be accessed through "execute"
+    # Bounds checking disabled since read should only be accessed through the bus controller
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char _read(self, unsigned int address):
+    cdef unsigned char read(self, unsigned short address):
         if address == KBDCR and self._kbd_buffer_index:
                 return 0x80
         elif address == KBD and self._kbd_buffer_index:
@@ -72,10 +72,10 @@ cdef class Apple1(Component):
             return 0x00
 
     # Wraparound disabled since address is strictly positive
-    # Bounds checking disabled since _read should only ever be accessed through "execute"
+    # Bounds checking disabled since write should only be accessed through the bus controller
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char _write(self, unsigned int address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data):
         if address == DSP and data >= 0x80:
             self._text_display.place_character(data & 0x7F)
 
