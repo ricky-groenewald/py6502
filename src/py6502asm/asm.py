@@ -61,7 +61,7 @@ class Assembler:
 
     def _is_dec(self, dec_string: str) -> bool:
         return bool(re.fullmatch(r'[0-9]+', dec_string))
-    
+
     def _parse_char(self, char: str) -> int:
         if not char[1].isascii():
             raise AssemblySyntaxError(f'Invalid ascii character: {char[1]}')
@@ -105,7 +105,7 @@ class Assembler:
             asm_string
         )
 
-        # 'c' type
+        # single character literal type
         asm_string = re.sub(
             r"(?<![a-zA-Z0-9'])'.'",
             lambda x: str(self._parse_char(x.group())),
@@ -206,9 +206,8 @@ class Assembler:
 
         if directive in ('.WORD', '.ADDR'):
             following_str = following_str.upper()
-            operand_str = self._parse_numbers((''.join(following_str.split(';')[:1])).strip())
             unknown_names = set()
-            for word in operand_str.split(','):
+            for word in following_str.split(','):
                 word_value = self._get_value(word)
                 if isinstance(word_value, int) and 0 <= word_value <= 0xffff:
                     self._add_bytes_to_code([word_value & 0xff, word_value >> 8])
@@ -626,7 +625,7 @@ class Assembler:
         comment_index = asm_string.find(';')
         comment_index = len(asm_string) if comment_index < 0 else comment_index
 
-        processed_string = asm_string[:comment_index]
+        processed_string = (asm_string[:comment_index]).strip()
 
         # Return on empty string
         if not processed_string:
@@ -645,12 +644,6 @@ class Assembler:
 
         string_split = processed_string.split()
 
-        # First check if symbols are being assigned
-        if '=' in processed_string and not (sum(str_spl[0] == '.' for str_spl in string_split[:2])):
-            self._process_symbol(*processed_string.strip().split('=', 1))
-            return
-
-
         # Test if first token is potentially a label
         if string_split[0][-1] == ':':
             label_token = string_split.pop(0)
@@ -660,16 +653,17 @@ class Assembler:
         if not string_split:
             return
 
+        # Check if symbols are being assigned
+        if '=' in processed_string and string_split[0][0] != '.':
+            self._process_symbol(*(''.join(string_split).split('=', 1)))
+            return
+
         # Handle any possible directives
         if string_split[0][0] == '.':
             # Pass the directive and original string following the directive
             self._process_directive(
                 string_split[0],
-                re.search(
-                    f'(?<=\\{string_split[0]}).*',
-                    asm_string[:comment_index],
-                    re.IGNORECASE
-                ).group().strip()
+                ''.join(string_split[1:])
             )
             return
 
