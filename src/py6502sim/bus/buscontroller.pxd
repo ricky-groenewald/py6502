@@ -5,6 +5,7 @@ Simulator definitions and functions for a component controller
 """
 from cpython.ref cimport PyObject
 from py6502sim.bus.component cimport Component
+from py6502sim.bus.emptyaddress cimport EmptyAddress
 from py6502sim.cpu.mos6502 cimport MOS6502, Registers
 
 """
@@ -20,10 +21,10 @@ cdef class BusController(Component):
     """
     cdef MappedAddress[0x10000] _component_address_map
     cdef MOS6502 _processor
-    cdef unsigned char _current_data_bus
-    cdef unsigned short _current_address_bus
-    cdef bint _current_read_write
-    cdef bint _raise_on_unmapped_access
+    cdef unsigned short _current_bus_address
+    cdef unsigned char _current_bus_data
+    cdef bint _current_bus_read_write_bar
+    cdef EmptyAddress _empty_address
 
     cpdef void add_component(self, Component component, unsigned int address_start) except *
 

@@ -17,6 +17,7 @@ DEF BREAK_FLAG = 0b00010000
 DEF UNUSED_FLAG = 0b00100000
 DEF OVERFLOW_FLAG = 0b01000000
 DEF NEGATIVE_FLAG = 0b10000000
+DEF NOZC_FLAGS = 0b11000011 # Negative, Overflow, Zero, and Carry
 
 class InvalidOPCode(Exception):
     """
@@ -526,41 +527,23 @@ cdef class MOS6502:
 
         self._temp_data = self._memory_bus.read(self._temp_address)
 
-        if (self._registers.OPCODE & 0x80): # SBC opcodes have bit 7 set
-            self._temp_data ^= 0xff # Invert for subtraction
+        # SBC opcodes have bit 7 set
+        self._temp_data ^= (-(self._registers.OPCODE >> 7)) & 0xff # Invert for subtraction
 
         self._arithmetic_result = (
-            self._registers.ACC + self._temp_data + (1 if self._registers.P & CARRY_FLAG else 0)
+            self._registers.ACC + self._temp_data + (self._registers.P & CARRY_FLAG)
         )
 
-        # Set carry flag
-        self._registers.P = (
-            self._registers.P | CARRY_FLAG
-            if self._arithmetic_result >> 8
-            else self._registers.P & ~CARRY_FLAG
-        )
+        # Clear N, O, Z, and C flags and set carry flag
+        self._registers.P = (self._registers.P & ~NOZC_FLAGS) | (self._arithmetic_result >> 8)
 
         self._arithmetic_result &= 0xff
 
-        # Set zero flag
-        self._registers.P = (
-            self._registers.P & ~ZERO_FLAG
-            if (self._arithmetic_result & 0xFF)
-            else self._registers.P | ZERO_FLAG
-        )
-
-        # Set overflow flag
-        self._registers.P = (
-            self._registers.P | OVERFLOW_FLAG
-            if ((self._registers.ACC ^ self._arithmetic_result) & (self._temp_data ^ self._arithmetic_result) & 0x80)
-            else self._registers.P & ~OVERFLOW_FLAG
-        )
-
-        # Set negative flag
-        self._registers.P = (
-            self._registers.P | NEGATIVE_FLAG
-            if self._arithmetic_result & NEGATIVE_FLAG
-            else self._registers.P & ~NEGATIVE_FLAG
+        # Set negative, overflow, zero flags
+        self._registers.P |= (
+            (self._arithmetic_result & NEGATIVE_FLAG)
+            | (((self._registers.ACC ^ self._arithmetic_result) & (self._temp_data ^ self._arithmetic_result) & 0x80) >> 1)
+            | ((not self._arithmetic_result) << 1)
         )
 
         self._registers.ACC = self._arithmetic_result
@@ -570,9 +553,8 @@ cdef class MOS6502:
         ###
         ### You know what? ...Fuck BCD!
         ###
-        ### Yeah... I can't remember how I got to this, but it works. I think I found a psuedo-code
-        ### algorithm for BCD addition/subtraction on the internet somewhere and adapted it in my
-        ### first "Pure Python" implementation. Look up commit 1dd4fd8 in the repo for more details.
+        ### Struggled with this for a while, but the gist of the status flag implementations
+        ### can be found here: http://www.6502.org/tutorials/decimal_mode.html
         ###
         if self._page_cross_possible:
             # Run a discarding cycle if a page cross occured
@@ -587,14 +569,14 @@ cdef class MOS6502:
         # _temp_data is used to store the value read from memory/accumulator/operand
         self._temp_data = self._memory_bus.read(self._temp_address)
 
-        # If OPCODE & 0x80 is set, we are subtracting
+        # If bit 7 of the OPCODE is set, we are subtracting
         result = (
                 (self._registers.ACC & 0x0F) +
-                (1 - 2 * ((self._registers.OPCODE & 0x80) >> 7)) * (self._temp_data & 0x0F) +
-                (self._registers.P & CARRY_FLAG) - ((self._registers.OPCODE & 0x80) >> 7)
+                (1 - 2 * (self._registers.OPCODE >> 7)) * (self._temp_data & 0x0F) +
+                (self._registers.P & CARRY_FLAG) - (self._registers.OPCODE >> 7)
             )
 
-        if (self._registers.OPCODE & 0x80): # If subtracting
+        if (self._registers.OPCODE >> 7): # If subtracting
             bin_result = self._registers.ACC + (self._temp_data^0xff) + (self._registers.P & CARRY_FLAG)
 
             self._registers.P = (
@@ -1501,15 +1483,15 @@ cdef class MOS6502:
             self._memory_bus.read(0x100 | self._registers.S)
             self._cycle_number = 2
         else:
-            self._decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
+            self._decimal_mode_was_set = self._registers.P & DECIMAL_MODE_FLAG
 
             self._registers.S += 1
             self._registers.P = self._memory_bus.read(0x100 | self._registers.S) | BREAK_FLAG | UNUSED_FLAG
 
             # Check if BCD operations need to be enabled or disabled if necessary
-            if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not self._decimal_mode_was_set:
+            if (self._registers.P & DECIMAL_MODE_FLAG) and not self._decimal_mode_was_set:
                 self.set_bcd_opcodes()
-            elif not <bint>(self._registers.P & DECIMAL_MODE_FLAG) and self._decimal_mode_was_set:
+            elif not (self._registers.P & DECIMAL_MODE_FLAG) and self._decimal_mode_was_set:
                 self.clear_bcd_opcodes()
 
             self._current_instruction = &MOS6502.load_op_code # prevent PC increment
@@ -1655,15 +1637,15 @@ cdef class MOS6502:
             self._memory_bus.read(0x100 | self._registers.S)
             self._cycle_number = 2
         elif self._cycle_number == 2:
-            self._decimal_mode_was_set = <bint>(self._registers.P & DECIMAL_MODE_FLAG)
+            self._decimal_mode_was_set = self._registers.P & DECIMAL_MODE_FLAG
 
             self._registers.S += 1
             self._registers.P = self._memory_bus.read(0x100 | self._registers.S) | BREAK_FLAG | UNUSED_FLAG
 
             # Check if BCD operations need to be enabled or disabled if necessary
-            if <bint>(self._registers.P & DECIMAL_MODE_FLAG) and not self._decimal_mode_was_set:
+            if (self._registers.P & DECIMAL_MODE_FLAG) and not self._decimal_mode_was_set:
                 self.set_bcd_opcodes()
-            elif not <bint>(self._registers.P & DECIMAL_MODE_FLAG) and self._decimal_mode_was_set:
+            elif not(self._registers.P & DECIMAL_MODE_FLAG) and self._decimal_mode_was_set:
                 self.clear_bcd_opcodes()
 
             self._cycle_number = 3

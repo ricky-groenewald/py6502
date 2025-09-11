@@ -6,6 +6,7 @@ Simulator definitions and functions for a component controller
 from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
 from cython cimport boundscheck, wraparound
 from py6502sim.bus.component cimport Component
+from py6502sim.bus.emptyaddress cimport EmptyAddress
 from py6502sim.cpu.mos6502 cimport MOS6502, Registers
 
 class ComponentSizeError(Exception):
@@ -18,11 +19,6 @@ class AddressRangeUnavailable(Exception):
     Address range is already occupied by another component
     """
 
-class UnallocatedAddressError(Exception):
-    """
-    Atempted to access an address not allocated to a component
-    """
-
 cdef class BusController(Component):
     """
     Class definition for an 8-bit component controller
@@ -32,10 +28,18 @@ cdef class BusController(Component):
         super().__init__(0x10000, controller_name)
         self._processor = processor
         self._processor.set_memory_bus(self)
-        self._current_data_bus = 0
-        self._current_address_bus = 0
-        self._current_read_write = True
-        self._raise_on_unmapped_access = raise_on_unmapped_access
+        self._current_bus_address = 0
+        self._current_bus_data = 0
+        self._current_bus_read_write_bar = 1
+        self._empty_address = EmptyAddress(
+            'EmptyAddress',
+            raise_on_unmapped_access
+        )
+
+        for i in range(0x10000):
+            self._component_address_map[i].component = <PyObject*>self._empty_address
+            self._component_address_map[i].internal_address = i
+            Py_INCREF(self._empty_address)
 
     def __dealloc__(self) -> None:
         for i in range(0x10000):
@@ -59,13 +63,12 @@ cdef class BusController(Component):
                 f'at address 0x{address_start:04X}.'
             )
 
-
         # First check if all addresses are available
         for i in range(component.get_size()):
-            if self._component_address_map[address_start+i].component is not NULL:
-                conflict_name = (
-                    <Component>self._component_address_map[address_start+i].component
-                ).get_name()
+            conflict_name = (
+                <Component>self._component_address_map[address_start+i].component
+            ).get_name()
+            if conflict_name is not self._empty_address.get_name():
                 raise AddressRangeUnavailable(
                     f'[{self.get_name()}] Component {component.get_name()} cannot be added. '
                     f'Address overlap at 0x{address_start+i:04X} with {conflict_name}.'
@@ -76,6 +79,7 @@ cdef class BusController(Component):
             self._component_address_map[address_start+i].internal_address = i
             self._component_address_map[address_start+i].component = <PyObject*>component
             Py_INCREF(component)
+            Py_DECREF(self._empty_address) # NEED TO decrement ref count to empty address
 
     cpdef void clock(self):
         self._processor.clock()
@@ -90,55 +94,34 @@ cdef class BusController(Component):
         self._processor.set_registers(registers)
 
     def get_bus_values(self):
-        return self._current_address_bus, self._current_data_bus, self._current_read_write
+        return (
+            self._current_bus_address,
+            self._current_bus_data,
+            self._current_bus_read_write_bar
+        )
 
     # Wraparound disabled since address is strictly positive
     # Bounds checking disabled since short address is always within bus controller's address range
     @boundscheck(False)
     @wraparound(False)
     cdef unsigned char read(self, unsigned short address):
-        self._current_read_write = 1
-        self._current_address_bus = address
-
         cdef MappedAddress mapped_address = self._component_address_map[address]
 
-        if mapped_address.component is NULL:
-            if self._raise_on_unmapped_access:
-                raise UnallocatedAddressError(
-                    f'[{self.get_name()}] Address not allocated to a component: 0x{address:04X}'
-                )
-            else:
-                self._current_data_bus = 0
-                return 0
+        self._current_bus_address = address
+        self._current_bus_data = (<Component>mapped_address.component).read(mapped_address.internal_address)
+        self._current_bus_read_write_bar = 1
 
-        self._current_data_bus = (<Component>mapped_address.component).read(
-            mapped_address.internal_address,
-        )
-
-        return self._current_data_bus
+        return self._current_bus_data
 
     # Wraparound disabled since address is strictly positive
     # Bounds checking disabled since short address is always within bus controller's address range
     @boundscheck(False)
     @wraparound(False)
     cdef unsigned char write(self, unsigned short address, unsigned char data):
-        self._current_read_write = 0
-        self._current_address_bus = address
-
         cdef MappedAddress mapped_address = self._component_address_map[address]
 
-        if mapped_address.component is NULL:
-            if self._raise_on_unmapped_access:
-                raise UnallocatedAddressError(
-                    f'[{self.get_name()}] Address not allocated to a component: 0x{address:04X}'
-                )
-            else:
-                self._current_data_bus = 0
-                return 0
+        self._current_bus_address = address
+        self._current_bus_data = (<Component>mapped_address.component).write(mapped_address.internal_address, data)
+        self._current_bus_read_write_bar = 0
 
-        self._current_data_bus = (<Component>mapped_address.component).write(
-            mapped_address.internal_address,
-            data
-        )
-
-        return self._current_data_bus
+        return self._current_bus_data
