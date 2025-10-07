@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "py6502"
 version = "0.1.0"
-description = "A 6502 computer emulator and assembler for microchip enthusiasts and retro computing fans."
+description = "A 6502 computer emulator for microchip enthusiasts and retro computing fans."
 authors = [{name = "Ricky Groenewald", email = "6112032+ricky-groenewald@users.noreply.github.com"}]
 license = {file = "LICENSE"}
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -18,7 +18,6 @@ classifiers = [
     "Topic :: Software Development :: Assemblers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Emulators",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
@@ -29,7 +28,7 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ["py6502sim", "py6502asm", "py6502ui"]
+packages = ["py6502sim", "py6502ui"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
