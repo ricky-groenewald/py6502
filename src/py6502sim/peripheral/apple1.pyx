@@ -69,6 +69,8 @@ cdef class Apple1(Component):
                 return 0x80
         elif address == KBD and self._kbd_buffer_index:
                 self._kbd_buffer_index -= 1
+                if self._kbd_buffer[self._kbd_buffer_index] == 0x88:
+                    self._text_display.backspace()
                 return self._kbd_buffer[self._kbd_buffer_index]
         elif address == DSP:
             return self._display_status
@@ -81,7 +83,7 @@ cdef class Apple1(Component):
     @wraparound(False)
     cdef unsigned char write(self, unsigned short address, unsigned char data):
         if address == DSP and data >= 0x80 and not self._display_status:
-            if data in [0x8D, 0x88]:
+            if data == 0x8D:
                 self._text_display.place_character(data & 0x7F)
             elif 0xA0 <= data <= 0xDF: # Only allow printable characters
                 self._text_display.place_character(data & 0x7F)

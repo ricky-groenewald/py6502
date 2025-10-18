@@ -30,6 +30,7 @@ cdef class TextDisplay:
 
     cpdef list get_screen_buffer(self)
     cdef void set_cursor(self, unsigned char character, float[4] color, unsigned char cursor_mode)
+    cdef void backspace(self)
     cdef void place_character(self, unsigned char character)
     cdef void clear_screen(self)
     cdef void set_background_color(self, float[4] color)

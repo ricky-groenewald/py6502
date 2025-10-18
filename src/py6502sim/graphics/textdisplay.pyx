@@ -84,6 +84,29 @@ cdef class TextDisplay:
             + [rgba_val for _ in range(self._pixel_padding_y) for _ in range(self._resolution_x) for rgba_val in self._colors[0][:4]] # Bottom padding (Same as top padding)
         )
 
+    cdef void backspace(self):
+        if self._cursor_pos_x == 0 and self._cursor_pos_y == self._cursor_last_cr_y_pos:
+            # Can't backspace CR
+            return
+
+        cdef int y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
+        cdef int x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
+
+        for y in range(self._font.height):
+            for x in range(self._font.width):
+                self._screen_buffer[y_offset + y][x_offset + x] = 0
+        
+        if self._cursor_pos_x > 0:
+            self._cursor_pos_x -= 1
+        else:
+            self._cursor_pos_x = self._character_max_cols - 1
+            self._cursor_pos_y = (self._character_max_rows + self._cursor_pos_y - 1) % self._character_max_rows
+
+        # Draw cursor
+        if self._cursor_mode:
+            self._cursor_blink_timer = 28
+            self._cursor_visible = False
+
     cdef void place_character(self, unsigned char character):
         cdef int y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
         cdef int x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
@@ -104,21 +127,6 @@ cdef class TextDisplay:
                 for y in range(self._font.height):
                     for x in range(self._pixel_padding_x, self._resolution_x - self._pixel_padding_x):
                         self._screen_buffer[y_offset + y][x] = 0
-
-        elif character == 0x08: # Backspace
-            if self._cursor_pos_x == 0 and self._cursor_pos_y == self._cursor_last_cr_y_pos:
-                # Can't backspace CR
-                return
-
-            for y in range(self._font.height):
-                for x in range(self._font.width):
-                    self._screen_buffer[y_offset + y][x_offset + x] = 0
-            
-            if self._cursor_pos_x > 0:
-                self._cursor_pos_x -= 1
-            else:
-                self._cursor_pos_x = self._character_max_cols - 1
-                self._cursor_pos_y = (self._character_max_rows + self._cursor_pos_y - 1) % self._character_max_rows
 
         else: # Any other character
             for y in range(self._font.height):
