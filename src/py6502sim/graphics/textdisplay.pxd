@@ -29,7 +29,7 @@ cdef class TextDisplay:
     cdef float[3][4] _colors #RGBA - 0 = background, 1 = foreground, 2 = cursor
 
     cpdef list get_screen_buffer(self)
-    cdef void set_cursor(self, unsigned char[4] size, float[4] color, unsigned char cursor_mode)
+    cdef void set_cursor(self, unsigned char character, float[4] color, unsigned char cursor_mode)
     cdef void place_character(self, unsigned char character)
     cdef void clear_screen(self)
     cdef void set_background_color(self, float[4] color)

@@ -10,6 +10,7 @@ cdef class Apple1(Component):
     cdef TextDisplay _text_display
     cdef unsigned char* _kbd_buffer
     cdef unsigned char _kbd_buffer_index
+    cdef unsigned char _display_status
     cdef BusController _bus_controller
     cpdef void initialize_display(self)
     cpdef bint add_character_to_kb_buffer(self, unsigned char character)

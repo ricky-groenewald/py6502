@@ -85,9 +85,6 @@ cdef class TextDisplay:
         )
 
     cdef void place_character(self, unsigned char character):
-        if character == 0x1B:
-            return
-
         cdef int y_offset = self._pixel_padding_y + self._cursor_pos_y * self._font.height
         cdef int x_offset = self._pixel_padding_x + self._cursor_pos_x * self._font.width
 
@@ -141,8 +138,8 @@ cdef class TextDisplay:
 
         # Draw cursor
         if self._cursor_mode:
-            self._cursor_blink_timer = 0
-            self._cursor_visible = True
+            self._cursor_blink_timer = 28
+            self._cursor_visible = False
 
     cdef void clear_screen(self):
         for y in range(self._resolution_y):
@@ -170,7 +167,7 @@ cdef class TextDisplay:
                 for x in range(self._font.width):
                     self._screen_buffer[y_offset + y][x_offset + x] = 0
 
-    cdef void set_cursor(self, unsigned char[4] size, float[4] color, unsigned char cursor_mode):
+    cdef void set_cursor(self, unsigned char character, float[4] color, unsigned char cursor_mode):
         self._cursor_mode = cursor_mode
         if cursor_mode:
             self._cursor_blink_timer = 0
@@ -182,4 +179,4 @@ cdef class TextDisplay:
 
         for y in range(self._font.height):
             for x in range(self._font.width):
-                self._cursor_pixel_map[y * self._font.width + x] = 2 if (size[0] <= x < size[2] and size[1] <= y < size[3]) else 0
+                self._cursor_pixel_map[y * self._font.width + x] = 2 if self._font.get_character_pixel(character, x, y) else 0

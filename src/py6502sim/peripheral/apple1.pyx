@@ -17,32 +17,34 @@ DEF DSP = 0x0002
 DEF DSPCR = 0x0003
 
 DEF KBD_BUFFER_SIZE = 8
-DEF FRAME_SIZE = 256 * 240
+DEF FRAME_SIZE = 256 * 208
 
 cdef class Apple1(Component):
-    def __init__(self, str memory_name, BusController bus_controller) -> None:
-        super().__init__(4, memory_name)
+    def __init__(self, BusController bus_controller) -> None:
+        super().__init__(4, "Apple1 Keyboard/Display")
 
         with resources.path('py6502sim.assets.fonts', 'sphere-1.bin') as path:
-            self._text_display = TextDisplay(256, 240, 8, 8, Font(str(path)))
+            self._text_display = TextDisplay(256, 208, 8, 8, Font(str(path)))
 
         self.initialize_display()
         self._kbd_buffer_index = 0
         self._kbd_buffer = <unsigned char*>malloc(KBD_BUFFER_SIZE * sizeof(unsigned char))
         self._bus_controller = bus_controller
+        self._display_status = 0x00
 
     def __dealloc__(self):
         if self._kbd_buffer:
             free(self._kbd_buffer)
 
     cpdef void clock(self):
+        self._display_status = 0x00 # Display status clears at 60Hz
         for _ in range(16667):
             self._bus_controller._processor.clock()
 
     cpdef void initialize_display(self):
         self._text_display.set_background_color(BG_COLOR)
         self._text_display.set_foreground_color(FG_COLOR)
-        self._text_display.set_cursor([0, 1, 5, 8], FG_COLOR, 1)
+        self._text_display.set_cursor(0x40, FG_COLOR, 1)
         self._text_display.clear_screen()
 
     cpdef bint add_character_to_kb_buffer(self, unsigned char character):
@@ -68,6 +70,8 @@ cdef class Apple1(Component):
         elif address == KBD and self._kbd_buffer_index:
                 self._kbd_buffer_index -= 1
                 return self._kbd_buffer[self._kbd_buffer_index]
+        elif address == DSP:
+            return self._display_status
         else:
             return 0x00
 
@@ -76,7 +80,13 @@ cdef class Apple1(Component):
     @boundscheck(False)
     @wraparound(False)
     cdef unsigned char write(self, unsigned short address, unsigned char data):
-        if address == DSP and data >= 0x80:
-            self._text_display.place_character(data & 0x7F)
+        if address == DSP and data >= 0x80 and not self._display_status:
+            if data in [0x8D, 0x88]:
+                self._text_display.place_character(data & 0x7F)
+            elif 0xA0 <= data <= 0xDF: # Only allow printable characters
+                self._text_display.place_character(data & 0x7F)
+            elif 0xE0 <= data: # Weird Apple 1 behavior: 0x60-0x7F are printed as 0x40-0x5F
+                self._text_display.place_character((data & 0x7F) - 0x20)
+            self._display_status = 0x80 # Display status is set when written to display
 
         return data
