@@ -67,3 +67,23 @@ cdef class Component:
             Byte value of the data written to the address
         """
         raise NotImplementedError("Subclass must implement this method")
+
+    cdef void bind(self, object system):
+        """
+        Late-binding hook. Called by System.__init__ on every component
+        after all components have been instantiated and added to their
+        bus. Overrides grab cross-component refs or register tick hooks.
+        Default: no-op.
+        """
+        pass
+
+    cdef void on_cycles_elapsed(self, unsigned long n):
+        """
+        Batch-end tick hook. Fired once at the end of every
+        BusController.run_cycles(N) call for every component that
+        subscribed via BusController.register_tick_hook. Default: no-op.
+
+        The iteration is O(num_tick_hooks) per batch, not per cycle —
+        this hook is cheap even when many components subscribe.
+        """
+        pass

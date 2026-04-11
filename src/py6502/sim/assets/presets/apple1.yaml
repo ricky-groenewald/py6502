@@ -1,0 +1,32 @@
+version: 1
+id: apple_i_4k
+name: Apple I (4K)
+description: |
+  The original Apple I from 1976: 1 MHz 6502, 4 KiB RAM, Apple I
+  cassette-interface I/O chip at $D010-$D013, and Steve Wozniak's
+  monitor program (wozmon) in ROM at $FF00-$FFFF.
+author: py6502
+tags: [apple, 1976, homebrew]
+
+cpu:
+  type: MOS6502
+  hz: 1000000
+
+memory:
+  - name: RAM
+    start: 0x0000
+    size: 0x1000
+
+  - name: ROM
+    start: 0xFF00
+    size: 0x0100
+    read_only: true
+    source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+
+display:
+  type: Apple1Display
+  address: 0xD012
+
+inputs:
+  - type: Apple1Keyboard
+    address: 0xD010

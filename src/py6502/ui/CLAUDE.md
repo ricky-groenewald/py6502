@@ -12,12 +12,18 @@ side.
 
 ```
 app.py                    Py6502App — viewport, menu bar, per-frame loop
-windows/                  DearPyGui modals and panels (system selector, …)
-systems/                  Per-preset configurators (apple1, custom6502)
+windows/                  DearPyGui modals and panels (stub, fills in v0.1)
+systems/                  Per-preset configurators (stub, fills in v0.1)
 utils/                    instructionmaps, small helpers
 themes.py                 DearPyGui theme factories
 py6502ui.py               LEGACY monolithic UI — do not port features into
 ```
+
+v0.1's `app.py` is deliberately minimal: it loads the Apple I preset via
+`System.from_yaml_file`, renders one 256×240 texture, pipes key presses
+into `system.inputs[0]`, and calls `system.run_for_microseconds(16667)`
+once per frame. The system-selector dialog, debug panels, and memory
+monitor are the rest of the v0.1 scope and land on top of this shell.
 
 ## The one rule that outranks everything
 
@@ -27,12 +33,14 @@ The frame loop looks like this:
 
 ```python
 while dpg.is_dearpygui_running():
-    if self.emulator:
-        self.emulator.on_update()     # one call → one sim slice
+    if self.system is not None:
+        self._drain_keys_into_system()
+        self.system.run_for_microseconds(FRAME_MICROSECONDS)
+        dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
     dpg.render_dearpygui_frame()
 ```
 
-`on_update` is allowed to call **exactly one** of:
+That frame body is allowed to call **exactly one** of:
 
 - `System.run_cycles(n)`
 - `System.run_for_microseconds(µs)` (usually `16667` at 60 Hz / 1 MHz)
@@ -71,7 +79,8 @@ is how we stay fast enough to run NES workloads in v0.2.
 - **Systems live under `systems/`** as per-preset configurators. Each one
   knows how to present "what are the user-configurable knobs for this
   machine?" and turn the result into a `SystemConfig` the sim can
-  consume. `systems/config.py::AVAILABLE_CONFIGS` is the registry.
+  consume. The directory ships empty in v0.1; the first configurator
+  lands with the system-selector dialog.
 - **Callbacks are methods**, not lambdas, when they do real work. Lambdas
   are fine for tiny things like `dpg.show_tool(dpg.mvTool_About)`.
 

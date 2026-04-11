@@ -30,18 +30,13 @@ src/py6502/            single top-level package
 │   ├── bus/           Component, BusController, Memory, EmptyAddress
 │   ├── cpu/           MOS6502 (cycle-accurate, precomputed dispatch)
 │   ├── graphics/      TextDisplay + Font
-│   ├── peripherals/   Apple1 and future devices
-│   ├── system/        System façade (under rewrite — see note below)
-│   └── assets/        Bundled BIOS ROMs, fonts
+│   ├── peripherals/   Apple1Display, Apple1Keyboard, future devices
+│   ├── system/        System façade + YAML loader + component registry
+│   └── assets/        Bundled BIOS ROMs, fonts, preset configs
 └── ui/                DearPyGui frontend (Py6502App + windows/systems/utils)
 docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP
 play/                  Scratch 6502 asm + binaries; not part of the package
 ```
-
-`src/py6502/sim/system/` currently holds draft files that are **intentionally
-not built** by `setup.py`. They exist as a design reference and will be
-reimplemented from scratch against `docs/SYSTEM_CONFIG.md` as the first
-piece of v0.1 implementation work.
 
 ## Commands
 
@@ -83,5 +78,3 @@ piece of v0.1 implementation work.
 - `src/py6502/ui/py6502ui.py` — the legacy monolithic UI. It stays as a
   feature-parity reference until the new `Py6502App` shell replaces it in
   v0.1. Don't port new features into it.
-- `src/py6502/sim/system/` drafts — see note above. Don't try to fix them
-  piecemeal; the rewrite happens as a single task against the IaC spec.

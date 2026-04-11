@@ -325,7 +325,7 @@ not register.
 py6502 distinguishes two kinds of configs:
 
 **Preset configs** ship inside the py6502 package at
-`src/py6502/sim/assets/configs/*.yaml`. They use `resource:` URIs for
+`src/py6502/sim/assets/presets/*.yaml`. They use `resource:` URIs for
 all binary data so the user never has to supply their own files. The
 `New System` dialog loads presets by scanning this directory.
 
@@ -338,9 +338,10 @@ A user can save a preset + their custom edits as a new user config.
 
 ### v0.1 preset list
 
-- `apple_i_4k.yaml` — original 4K Apple I with wozmon
-- `apple_i_8k.yaml` — 8K variant
-- `custom_6502.yaml` — bare-bones configurable starting point
+- `apple1.yaml` — original 4K Apple I with wozmon
+
+Additional presets (`apple_i_8k`, `custom_6502`, …) land as the
+system-selector dialog fills out.
 
 ---
 
@@ -544,9 +545,9 @@ version: 1
 id: apple_i_4k
 name: Apple I (4K)
 description: |
-  The original Apple I from 1976: 1 MHz 6502, 4 KiB RAM, Apple I cassette
-  interface I/O chip at $D010-$D013, and Steve Wozniak's monitor program
-  (wozmon) in ROM at $FF00-$FFFF.
+  The original Apple I from 1976: 1 MHz 6502, 4 KiB RAM, Apple I
+  cassette-interface I/O chip at $D010-$D013, and Steve Wozniak's
+  monitor program (wozmon) in ROM at $FF00-$FFFF.
 author: py6502
 tags: [apple, 1976, homebrew]
 
@@ -568,13 +569,8 @@ memory:
 display:
   type: Apple1Display
   address: 0xD012       # DSP + DSPCR
-  params:
-    native_size: [240, 192]    # 40 cols x 24 rows of 6x8 glyphs
 
 inputs:
   - type: Apple1Keyboard
     address: 0xD010     # KBD + KBDCR
 ```
-
-The 8K variant (`apple_i_8k.yaml`) differs only in
-`memory[0].size: 0x2000`. Everything else is identical.

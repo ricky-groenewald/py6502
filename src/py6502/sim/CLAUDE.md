@@ -13,16 +13,10 @@ read that first if you're new to the layout.
 bus/          Component base class, BusController, Memory, EmptyAddress
 cpu/          MOS6502 (cycle-accurate, precomputed [256][2] dispatch)
 graphics/     TextDisplay + Font (character-grid renderer)
-peripherals/  Apple1 and future machines
-system/       System façade (draft; intentionally not built — see below)
-assets/       Bundled BIOS ROMs, fonts (shipped via package-data)
+peripherals/  Apple1Display, Apple1Keyboard, future machines
+system/       System façade + YAML loader + component registry
+assets/       Bundled BIOS ROMs, fonts, preset configs (shipped via package-data)
 ```
-
-**`system/` is currently a draft.** The files are not compiled by
-`setup.py`, they exist only as a design reference, and they will be
-rewritten from scratch against `docs/SYSTEM_CONFIG.md` as the first piece
-of v0.1 implementation work. Don't fix them piecemeal — any real work on
-`system/` is the rewrite.
 
 ## Performance rules (load-bearing)
 
@@ -113,21 +107,24 @@ mapper, PPU register window, …):
 
 ## Peripherals specifically
 
-A v0.1 anti-pattern that you will still see in `peripherals/apple1.pyx`:
+**Peripherals do not own their clock.** The cycle loop lives in
+`BusController.run_cycles` (invoked from `System.run_cycles` /
+`run_for_microseconds`), which executes `N` calls to `MOS6502.clock()` in
+pure Cython and then fans out a single tick-hook call per registered
+component. A peripheral that needs cycle-level accuracy overrides
+`cdef void on_cycles_elapsed(self, unsigned long n)` and subscribes via
+`bind()` — see `Apple1Display` for the reference implementation of the
+DSPCR busy-timer.
 
-```python
-def clock(self):
-    for _ in range(16667):
-        self._bus_controller._processor.clock()
-```
+### Accuracy First
 
-This is historical. The Python loop is tolerable only because it happens
-exactly once per UI frame. **New peripherals must not own their clock.**
-The clock loop lives in `System.run_cycles` / `run_for_microseconds`, and a
-peripheral's `clock()` / `tick()` is whatever cycle-level work that
-peripheral needs on a single tick (raising an IRQ, pumping a shift
-register, advancing an output byte). The Apple I version will be rewritten
-to this shape in v0.1.
+Hardware timing is a contract. `Apple1Display`'s DSPCR stays busy for
+exactly one NTSC frame (`16667` cycles at 1 MHz) after a DSP write — not
+"some cycles", not "cleared at the next batch boundary". Test
+`test_dspcr_timing_via_system_run_cycles` locks this at batch
+granularity so future refactors can't silently regress it. When you add
+a peripheral with hardware-observable timing, write the equivalent test
+up front and keep it cycle-exact.
 
 ## Testing
 

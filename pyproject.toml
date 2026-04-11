@@ -10,6 +10,9 @@ authors = [{name = "Ricky Groenewald", email = "6112032+ricky-groenewald@users.n
 license = {file = "LICENSE"}
 readme = "README.md"
 requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
