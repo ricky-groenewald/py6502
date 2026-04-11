@@ -1,9 +1,9 @@
 import dearpygui.dearpygui as dpg
 from time import perf_counter, sleep
-from py6502sim.peripheral import Apple1
-from py6502sim.cpu import MOS6502
-from py6502sim.bus import BusController, Memory
-from py6502asm.asm import INSTRUCTION_MAP
+from py6502.sim.peripherals import Apple1
+from py6502.sim.cpu import MOS6502
+from py6502.sim.bus import BusController, Memory
+from py6502.ui.utils.instructionmaps import INSTRUCTION_MAP_6502
 
 class Py6502UI:
     def __init__(self, rom_data):
@@ -21,13 +21,16 @@ class Py6502UI:
 
         self.ram = Memory(0xD000, "RAM", 0)
         self.ram.set_data(rom_data[:0xD000])
+        self.ram2 = Memory(0xFF00 - 0xD100, "RAM2", 0)
+        self.ram2.set_data(rom_data[0xD100:0xFF00])
         self.rom = Memory(0x100, "ROM", 1)
         self.rom.set_data(rom_data[0xFF00:])
         self.processor = MOS6502()
         self.bus_controller = BusController("Bus Controller", self.processor)
         self.bus_controller.add_component(self.ram, 0x0000)
+        self.bus_controller.add_component(self.ram2, 0xD100)
         self.bus_controller.add_component(self.rom, 0xFF00)
-        self.apple1 = Apple1("Apple 1", self.bus_controller)
+        self.apple1 = Apple1(self.bus_controller)
         self.bus_controller.add_component(self.apple1, 0xD010)
         self.bus_controller.send_reset()
         self.key_buffer = []
@@ -53,7 +56,7 @@ class Py6502UI:
             '(ind)',
             'zp,Y'
         ]
-        for opcode_label, opcode_data in INSTRUCTION_MAP.items():
+        for opcode_label, opcode_data in INSTRUCTION_MAP_6502.items():
             for i, opcode in enumerate(opcode_data):
                 if opcode is not None:
                     self.opcode_disasm[opcode] = f'{opcode_label} {mnemonic_list[i]}'
@@ -192,6 +195,8 @@ class Py6502UI:
         for page in range(self.mem_monitor_start_page, self.mem_monitor_end_page + 1):
             if page < 0xD0:
                 page_data = self.ram.get_data(page << 8, 0x100)
+            elif page >= 0xD1 and page < 0xFF:
+                page_data = self.ram2.get_data((page - 0xD1) << 8, 0x100)
             elif page == 0xFF:
                 page_data = self.rom.get_data(0x0000, 0x100)
             else:
@@ -252,7 +257,10 @@ class Py6502UI:
             with open(file_path, 'rb') as f:
                 data = f.read()
                 
-                self.ram.set_data(list(data), start_address)
+                if start_address < 0xD000:
+                    self.ram.set_data(list(data), start_address)
+                elif start_address >= 0xD100 and start_address < 0xFF00:
+                    self.ram2.set_data(list(data), start_address - 0xD100)
                     
                 self.update_memory_monitor()
                 dpg.hide_item("load_binary_window")
@@ -327,7 +335,7 @@ class Py6502UI:
         self.create_file_dialog()
 
         with dpg.window(label="Video Output", width=256 * 3 + 16, height=240 * 3 + 16, no_resize=True, no_close=True, no_title_bar=True, tag="video_output"):
-            dpg.draw_image("output_texture", (0, 20), (256 * 3, 240 * 3))
+            dpg.draw_image("output_texture", (0, 20), (256 * 3, 240 * 3 + 1))
 
         with dpg.window(label="Emulator Controls", width=256, height=400, no_close=True):  # Increased height for registers
             with dpg.group(horizontal=True):
@@ -398,17 +406,30 @@ class Py6502UI:
         dpg.show_viewport()
         frame_count = 0
         now = perf_counter()
+        dt = 1/60
+        prev_time = 0
         
         while dpg.is_dearpygui_running():
             for key in self.key_buffer:
                 self.apple1.add_character_to_kb_buffer(key)
             self.key_buffer = []
             if self.sim_running:
-                self.apple1.clock()
-                dpg.set_value("output_texture", self.apple1.get_screen_buffer())
-                # Update registers
-                self.update_registers()
-                self.update_memory_monitor()
+                current_time = perf_counter()
+                if current_time - prev_time >= (2 * dt):
+                    prev_time = current_time - (2 * dt)
+
+                if current_time - prev_time >= dt:
+                    # Clock the apple1 for 16667 clock cycles (1MHz / 60Hz)
+                    self.apple1.clock()
+
+                    # Update registers
+                    self.update_registers()
+                    self.update_memory_monitor()
+
+                    # Update video frame
+                    dpg.set_value("output_texture", self.apple1.get_screen_buffer())
+
+                    prev_time += dt
             dpg.render_dearpygui_frame()
             frame_count += 1
             if perf_counter() - now > 2:

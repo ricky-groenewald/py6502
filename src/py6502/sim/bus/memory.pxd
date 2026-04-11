@@ -1,7 +1,7 @@
 """
 CYTHON MEMORY COMPONENT CLASS DECLARATIONS
 """
-from py6502sim.bus.component cimport Component
+from py6502.sim.bus.component cimport Component
 
 cdef class Memory(Component):
     cdef unsigned char* _data

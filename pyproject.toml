@@ -28,8 +28,11 @@ test = [
 ]
 
 [tool.setuptools]
-packages = ["py6502sim", "py6502ui"]
 package-dir = {"" = "src"}
 
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["py6502*"]
+
 [tool.setuptools.package-data]
-py6502sim = ["assets/**/*"]
+"py6502.sim" = ["assets/**/*"]

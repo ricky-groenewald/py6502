@@ -5,9 +5,9 @@ Simulator definitions and functions for a component controller
 """
 from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
 from cython cimport boundscheck, wraparound
-from py6502sim.bus.component cimport Component
-from py6502sim.bus.emptyaddress cimport EmptyAddress
-from py6502sim.cpu.mos6502 cimport MOS6502, Registers
+from py6502.sim.bus.component cimport Component
+from py6502.sim.bus.emptyaddress cimport EmptyAddress
+from py6502.sim.cpu.mos6502 cimport MOS6502, Registers
 
 class ComponentSizeError(Exception):
     """
@@ -81,8 +81,25 @@ cdef class BusController(Component):
             Py_INCREF(component)
             Py_DECREF(self._empty_address) # NEED TO decrement ref count to empty address
 
+    cpdef void testme(self):
+        for _ in range(96_247_419):
+            self._processor.clock()
+
+    cpdef bint check_success(self):
+        return self.read(0x0200) == 0xF0
+
     cpdef void clock(self):
         self._processor.clock()
+
+    cpdef void run_cycles(self, unsigned long cycles):
+        cdef unsigned long i
+        for i in range(cycles):
+            self._processor.clock()
+
+    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz):
+        cdef unsigned long cycles = (microseconds * cpu_hz) // 1000000
+        if cycles:
+            self.run_cycles(cycles)
 
     cpdef void send_reset(self):
         self._processor.send_reset()

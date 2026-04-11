@@ -1,6 +1,6 @@
-from py6502sim.bus.component cimport Component
-from py6502sim.bus.buscontroller cimport BusController
-from py6502sim.graphics.textdisplay cimport Font, TextDisplay
+from py6502.sim.bus.component cimport Component
+from py6502.sim.bus.buscontroller cimport BusController
+from py6502.sim.graphics.textdisplay cimport Font, TextDisplay
 
 # Colors:
 #   bg='#282828',

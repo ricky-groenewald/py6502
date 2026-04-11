@@ -1,6 +1,6 @@
-from py6502sim.bus.component cimport Component
-from py6502sim.bus.buscontroller cimport BusController
-from py6502sim.graphics.textdisplay cimport Font, TextDisplay
+from py6502.sim.bus.component cimport Component
+from py6502.sim.bus.buscontroller cimport BusController
+from py6502.sim.graphics.textdisplay cimport Font, TextDisplay
 from importlib import resources
 from libc.string cimport memcpy
 from cython cimport boundscheck, wraparound
@@ -17,14 +17,14 @@ DEF DSP = 0x0002
 DEF DSPCR = 0x0003
 
 DEF KBD_BUFFER_SIZE = 8
-DEF FRAME_SIZE = 256 * 208
+DEF FRAME_SIZE = 256 * 240
 
 cdef class Apple1(Component):
     def __init__(self, BusController bus_controller) -> None:
         super().__init__(4, "Apple1 Keyboard/Display")
 
-        with resources.path('py6502sim.assets.fonts', 'sphere-1.bin') as path:
-            self._text_display = TextDisplay(256, 208, 8, 8, Font(str(path)))
+        with resources.path('py6502.sim.assets.fonts', 'sphere-1.bin') as path:
+            self._text_display = TextDisplay(256, 240, 8, 24, Font(str(path)))
 
         self.initialize_display()
         self._kbd_buffer_index = 0
@@ -82,12 +82,12 @@ cdef class Apple1(Component):
     @boundscheck(False)
     @wraparound(False)
     cdef unsigned char write(self, unsigned short address, unsigned char data):
-        if address == DSP and data >= 0x80 and not self._display_status:
-            if data == 0x8D:
+        if address == DSP and not self._display_status:
+            if (data & 0x7F) == 0x0D:
                 self._text_display.place_character(data & 0x7F)
-            elif 0xA0 <= data <= 0xDF: # Only allow printable characters
+            elif 0x20 <= (data & 0x7F) <= 0x5F: # Only allow printable characters
                 self._text_display.place_character(data & 0x7F)
-            elif 0xE0 <= data: # Weird Apple 1 behavior: 0x60-0x7F are printed as 0x40-0x5F
+            elif 0x60 <= (data & 0x7F): # Weird Apple 1 behavior: 0x60-0x7F are printed as 0x40-0x5F
                 self._text_display.place_character((data & 0x7F) - 0x20)
             self._display_status = 0x80 # Display status is set when written to display
 

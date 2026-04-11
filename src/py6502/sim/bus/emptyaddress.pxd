@@ -1,4 +1,4 @@
-from py6502sim.bus.component cimport Component
+from py6502.sim.bus.component cimport Component
 
 cdef class EmptyAddress(Component):
     cdef bint _raise_on_unmapped

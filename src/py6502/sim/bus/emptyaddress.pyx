@@ -6,7 +6,7 @@ If 'raise_on_unmapped' is True, any read or write will raise an UnallocatedAddre
 Otherwise, the operations simply return 0.
 """
 
-from py6502sim.bus.component cimport Component
+from py6502.sim.bus.component cimport Component
 from cython cimport boundscheck, wraparound
 
 class UnallocatedAddressError(Exception):
