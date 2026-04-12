@@ -11,6 +11,7 @@ from importlib import resources
 import dearpygui.dearpygui as dpg
 
 from py6502.sim.bus.emptyaddress import UnallocatedAddressError
+from py6502.sim.cpu.mos6502 import InvalidOPCode
 from py6502.sim.system import System
 from py6502.ui.utils.instructionmaps import INSTRUCTION_MAP_6502
 
@@ -56,6 +57,7 @@ class Py6502App:
         self._opcode_disasm = _build_opcode_disasm()
         self._mem_monitor_page = 0x00
         self._sim_running = True
+        self._sim_error: str | None = None
 
         self._build_texture_registry()
         self._build_menu_bar()
@@ -83,6 +85,21 @@ class Py6502App:
                 dpg.add_menu_item(label="Reset System", tag="ResetMenuItem", callback=self._reset_system)
                 dpg.add_separator(tag="FileMenuSeparator1")
                 dpg.add_menu_item(label="Exit", tag="ExitMenuItem", callback=dpg.stop_dearpygui)
+            with dpg.menu(label="Settings", tag="SettingsMenu"):
+                dpg.add_menu_item(
+                    label="Halt on invalid opcode",
+                    tag="SettingsInvalidOpcode",
+                    check=True,
+                    default_value=True,
+                    callback=self._on_invalid_opcode_toggle,
+                )
+                dpg.add_menu_item(
+                    label="Halt on unmapped memory",
+                    tag="SettingsUnmappedMemory",
+                    check=True,
+                    default_value=False,
+                    callback=self._on_unmapped_memory_toggle,
+                )
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(label="About", callback=lambda: dpg.show_tool(dpg.mvTool_About))
 
@@ -141,6 +158,8 @@ class Py6502App:
                 dpg.add_text("Decode:")
                 dpg.add_text("", tag="reg_opcode_disasm")
 
+            dpg.add_text("", tag="sim_error_text", color=(255, 0, 0), show=False)
+
             dpg.add_separator()
             dpg.add_text("Memory Monitor", color=(255, 255, 0))
             with dpg.group(horizontal=True, horizontal_spacing=0):
@@ -173,7 +192,10 @@ class Py6502App:
             if self.system is not None:
                 if self._sim_running:
                     self._drain_keys_into_system()
-                    self.system.run_for_microseconds(FRAME_MICROSECONDS)
+                    try:
+                        self.system.run_for_microseconds(FRAME_MICROSECONDS)
+                    except (InvalidOPCode, UnallocatedAddressError) as exc:
+                        self._on_sim_error(exc)
                     dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
                 self._refresh_debug_panels()
             dpg.render_dearpygui_frame()
@@ -209,9 +231,7 @@ class Py6502App:
         page = self._mem_monitor_page
         base = page << 8
         lines: list[str] = []
-        try:
-            self.system.peek(base)
-        except UnallocatedAddressError:
+        if not self.system.is_mapped(base):
             dpg.set_value("mem_monitor", f"{base:04X}: Unmapped memory range")
             dpg.configure_item("mem_monitor", color=(255, 0, 0))
             return
@@ -252,6 +272,22 @@ class Py6502App:
             else:
                 break
 
+    def _on_sim_error(self, exc: Exception) -> None:
+        self._sim_running = False
+        self._sim_error = str(exc)
+        dpg.set_value("sim_error_text", f"ERROR: {exc}")
+        dpg.configure_item("sim_error_text", show=True)
+        dpg.configure_item("play_button", enabled=False)
+        dpg.configure_item("pause_button", enabled=False)
+
+    def _on_invalid_opcode_toggle(self, sender, app_data, user_data) -> None:
+        if self.system is not None:
+            self.system.set_invalid_opcode_mode(1 if app_data else 0)
+
+    def _on_unmapped_memory_toggle(self, sender, app_data, user_data) -> None:
+        if self.system is not None:
+            self.system.set_unmapped_memory_mode(app_data)
+
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
@@ -271,6 +307,11 @@ class Py6502App:
             return
         self.system.reset()
         self._key_buffer.clear()
+        self._sim_error = None
+        dpg.configure_item("sim_error_text", show=False)
+        dpg.configure_item("play_button", enabled=True)
+        dpg.configure_item("pause_button", enabled=True)
+        self._play_handler()
         dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
         self._refresh_debug_panels()
         dpg.focus_item(VIDEO_WINDOW_TAG)

@@ -3,7 +3,7 @@ CYTHON MOS6502 PROCESSOR CLASS DECLARATIONS
 """
 from py6502.sim.bus.component cimport Component
 
-ctypedef void (*instruction_func)(MOS6502)
+ctypedef void (*instruction_func)(MOS6502) except *
 
 cdef struct Registers:
     unsigned char OPCODE # Not a real register, but used for debugging
@@ -26,6 +26,7 @@ cdef class MOS6502:
     cdef Component _memory_bus
 
     # Internal variables
+    cdef unsigned char _invalid_opcode_mode  # 0 = NOP, 1 = crash
     cdef unsigned char _cycle_number
     cdef unsigned char _temp_data
     cdef unsigned short _temp_address
@@ -48,11 +49,12 @@ cdef class MOS6502:
     cdef void set_registers(self, Registers registers)
 
     # Control Functions
-    cdef void clock(self)
+    cdef void clock(self) except *
     cdef void send_reset(self)
     cdef void send_irq(self)
     cdef void send_nmi(self)
-    cdef void load_op_code(self)
+    cdef void load_op_code(self) except *
+    cdef void set_invalid_opcode_mode(self, unsigned char mode)
     cdef void clear_bcd_opcodes(self)
     cdef void set_bcd_opcodes(self)
 

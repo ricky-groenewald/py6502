@@ -34,6 +34,7 @@ cdef class MOS6502:
     def __init__(self) -> None:
         # Initialize internal and external variables
         self._memory_bus = None
+        self._invalid_opcode_mode = 1  # 0 = NOP, 1 = crash (default)
         self._cycle_number = 0x00
         self._temp_data = 0x00
         self._temp_address = 0x0000
@@ -271,10 +272,13 @@ cdef class MOS6502:
     def set_memory_bus(self, Component memory_bus):
         self._memory_bus = memory_bus
 
+    cdef void set_invalid_opcode_mode(self, unsigned char mode):
+        self._invalid_opcode_mode = mode
+
     ###
     #   CONTROL FUNCTIONS
     ###
-    cdef void clock(self):
+    cdef void clock(self) except *:
         if self._current_instruction:
             self._current_instruction(self)
         else:
@@ -330,7 +334,15 @@ cdef class MOS6502:
             self._current_instruction = self._instructions[self._registers.OPCODE][0]
             self._next_instruction = self._instructions[self._registers.OPCODE][1]
             if self._current_instruction is NULL:
-                raise InvalidOPCode(f'Invalid OPCODE: 0x{self._registers.OPCODE:02X}')
+                if self._invalid_opcode_mode == 0:
+                    # NOP mode: treat as 2-cycle implied NOP
+                    self._current_instruction = &MOS6502.implied
+                    self._next_instruction = &MOS6502.NOP
+                else:
+                    raise InvalidOPCode(
+                        f'Invalid OPCODE: 0x{self._registers.OPCODE:02X} '
+                        f'at 0x{self._registers.OPCODE_ADDR:04X}'
+                    )
 
         self._cycle_number = 0
         # We don't update the PC here, as we need to keep the registers consistent

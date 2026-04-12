@@ -19,23 +19,25 @@ cdef class EmptyAddress(Component):
         # The size is arbitrary because the internal address passed in is ignored.
         super().__init__(0, name)
         self._raise_on_unmapped = raise_on_unmapped
+        self._bus_data_ptr = NULL
+
+    cdef void set_bus_data_ptr(self, unsigned char* ptr):
+        self._bus_data_ptr = ptr
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char read(self, unsigned short address):
+    cdef unsigned char read(self, unsigned short address) except *:
         if self._raise_on_unmapped:
             raise UnallocatedAddressError(
                 f'Address not allocated to a component: 0x{address:04X}'
             )
-        else:
-            return 0
+        return self._bus_data_ptr[0]
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
         if self._raise_on_unmapped:
             raise UnallocatedAddressError(
                 f'Address not allocated to a component: 0x{address:04X}'
             )
-        else:
-            return 0 
+        return data

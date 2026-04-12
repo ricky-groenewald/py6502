@@ -33,11 +33,14 @@ cdef class BusController(Component):
     cpdef void testme(self)
     cpdef bint check_success(self)
 
-    cpdef void clock(self)
-    cpdef void run_cycles(self, unsigned long cycles)
-    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz)
+    cpdef void clock(self) except *
+    cpdef void run_cycles(self, unsigned long cycles) except *
+    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *
 
     cpdef void send_reset(self)
 
     cpdef Registers get_registers(self)
     cpdef void set_registers(self, Registers registers)
+
+    cpdef bint is_mapped(self, unsigned short address)
+    cpdef void set_unmapped_memory_mode(self, bint crash)
