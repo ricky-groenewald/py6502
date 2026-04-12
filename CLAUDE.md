@@ -30,18 +30,13 @@ src/py6502/            single top-level package
 │   ├── bus/           Component, BusController, Memory, EmptyAddress
 │   ├── cpu/           MOS6502 (cycle-accurate, precomputed dispatch)
 │   ├── graphics/      TextDisplay + Font
-│   ├── peripherals/   Apple1 and future devices
-│   ├── system/        System façade (under rewrite — see note below)
-│   └── assets/        Bundled BIOS ROMs, fonts
+│   ├── peripherals/   Apple1Display, Apple1Keyboard, future devices
+│   ├── system/        System façade + YAML loader + component registry
+│   └── assets/        Bundled BIOS ROMs, fonts, preset configs
 └── ui/                DearPyGui frontend (Py6502App + windows/systems/utils)
 docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP
 play/                  Scratch 6502 asm + binaries; not part of the package
 ```
-
-`src/py6502/sim/system/` currently holds draft files that are **intentionally
-not built** by `setup.py`. They exist as a design reference and will be
-reimplemented from scratch against `docs/SYSTEM_CONFIG.md` as the first
-piece of v0.1 implementation work.
 
 ## Commands
 
@@ -58,7 +53,10 @@ piece of v0.1 implementation work.
 
 - **Git**: every feature lands via a PR from a feature branch into `dev`.
   Versioned releases PR `dev` → `main`. Never force-push `main` or `dev`.
-  See `docs/ROADMAP.md` §Git workflow.
+  See `docs/ROADMAP.md` §Git workflow. **Every commit and PR goes
+  through the `/commit` skill** — it enforces the protected-branch
+  gate, feature-branch naming, and commit-message shape. Never run
+  `git commit` or `gh pr create` out-of-band.
 - **Commit messages**: keep them as concise as the change allows — a
   single imperative headline is ideal; a short body is fine when the
   change spans multiple concerns and the *why* isn't obvious from the
@@ -83,5 +81,3 @@ piece of v0.1 implementation work.
 - `src/py6502/ui/py6502ui.py` — the legacy monolithic UI. It stays as a
   feature-parity reference until the new `Py6502App` shell replaces it in
   v0.1. Don't port new features into it.
-- `src/py6502/sim/system/` drafts — see note above. Don't try to fix them
-  piecemeal; the rewrite happens as a single task against the IaC spec.

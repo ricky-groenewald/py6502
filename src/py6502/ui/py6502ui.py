@@ -1,6 +1,13 @@
+# NOTE: This file is **reference material only**. It is the pre-restructure
+# monolithic UI, preserved as a feature-parity checklist while the new
+# Py6502App shell is being built out. It is not imported by the package
+# and does not need to stay runtime-correct — the imports and key call
+# sites below are updated to reflect the current architecture (split
+# Apple1 peripherals, Py6502App entry point) but the rest of the file
+# still wires the simulator by hand.
 import dearpygui.dearpygui as dpg
 from time import perf_counter, sleep
-from py6502.sim.peripherals import Apple1
+from py6502.sim.peripherals import Apple1Display, Apple1Keyboard
 from py6502.sim.cpu import MOS6502
 from py6502.sim.bus import BusController, Memory
 from py6502.ui.utils.instructionmaps import INSTRUCTION_MAP_6502
@@ -30,8 +37,10 @@ class Py6502UI:
         self.bus_controller.add_component(self.ram, 0x0000)
         self.bus_controller.add_component(self.ram2, 0xD100)
         self.bus_controller.add_component(self.rom, 0xFF00)
-        self.apple1 = Apple1(self.bus_controller)
-        self.bus_controller.add_component(self.apple1, 0xD010)
+        self.apple1_keyboard = Apple1Keyboard()
+        self.apple1_display = Apple1Display()
+        self.bus_controller.add_component(self.apple1_keyboard, 0xD010)
+        self.bus_controller.add_component(self.apple1_display, 0xD012)
         self.bus_controller.send_reset()
         self.key_buffer = []
         self.sim_running = False
@@ -131,7 +140,7 @@ class Py6502UI:
             
     def reset_handler(self):
         self.bus_controller.send_reset()
-        self.apple1.clear_kbd_buffer()
+        self.apple1_keyboard.clear_kbd_buffer()
         self.key_buffer = []
         self.clock_step_handler()
         self.clock_step_handler()
@@ -139,19 +148,19 @@ class Py6502UI:
 
     def clock_step_handler(self):
         self.bus_controller.clock()
-        dpg.set_value("output_texture", self.apple1.get_screen_buffer())
+        dpg.set_value("output_texture", self.apple1_display.get_framebuffer())
         self.update_registers()
         self.update_memory_monitor()
 
     def inst_step_handler(self):
         registers = self.bus_controller.get_registers()
         opcode_inst, opcode_addr = registers['OPCODE'], registers['OPCODE_ADDR']
-        
+
         while registers['OPCODE'] == opcode_inst and registers['OPCODE_ADDR'] == opcode_addr:
             self.bus_controller.clock()
             registers = self.bus_controller.get_registers()
 
-        dpg.set_value("output_texture", self.apple1.get_screen_buffer())
+        dpg.set_value("output_texture", self.apple1_display.get_framebuffer())
         self.update_registers()
         self.update_memory_monitor()
 
@@ -411,7 +420,7 @@ class Py6502UI:
         
         while dpg.is_dearpygui_running():
             for key in self.key_buffer:
-                self.apple1.add_character_to_kb_buffer(key)
+                self.apple1_keyboard.add_character_to_kb_buffer(key)
             self.key_buffer = []
             if self.sim_running:
                 current_time = perf_counter()
@@ -419,15 +428,17 @@ class Py6502UI:
                     prev_time = current_time - (2 * dt)
 
                 if current_time - prev_time >= dt:
-                    # Clock the apple1 for 16667 clock cycles (1MHz / 60Hz)
-                    self.apple1.clock()
+                    # One UI frame's worth of cycles at 1 MHz / 60 Hz.
+                    # The new shell routes this through System.run_for_microseconds;
+                    # the legacy file spun the BusController directly.
+                    self.bus_controller.run_cycles(16667)
 
                     # Update registers
                     self.update_registers()
                     self.update_memory_monitor()
 
                     # Update video frame
-                    dpg.set_value("output_texture", self.apple1.get_screen_buffer())
+                    dpg.set_value("output_texture", self.apple1_display.get_framebuffer())
 
                     prev_time += dt
             dpg.render_dearpygui_frame()

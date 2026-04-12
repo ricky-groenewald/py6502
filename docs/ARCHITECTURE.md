@@ -59,12 +59,12 @@ src/py6502/
 ├── __main__.py                    # python -m py6502 → Py6502App().run()
 ├── sim/                           # Cython simulator (hot path)
 │   ├── __init__.py
-│   ├── assets/                    # Fonts, BIOSes, preset configs (v0.1)
+│   ├── assets/                    # Fonts, BIOSes, preset configs
 │   │   ├── bios/
-│   │   ├── configs/               # Preset .yaml configs
-│   │   └── fonts/
+│   │   ├── fonts/
+│   │   └── presets/               # Preset .yaml configs
 │   ├── bus/
-│   │   ├── component.pxd/.pyx     # Component base class
+│   │   ├── component.pxd/.pyx     # Component base class + tick hooks
 │   │   ├── buscontroller.pxd/.pyx # Flat 64K MappedAddress table
 │   │   ├── memory.pxd/.pyx        # RAM / ROM region
 │   │   └── emptyaddress.pxd/.pyx  # Sentinel for unmapped addresses
@@ -73,9 +73,10 @@ src/py6502/
 │   ├── graphics/
 │   │   └── textdisplay.pxd/.pyx   # Character-grid framebuffer + Font
 │   ├── peripherals/
-│   │   └── apple1.pxd/.pyx        # Apple I keyboard + display
+│   │   ├── apple1_display.pxd/.pyx  # DSP + DSPCR + NTSC-frame busy timer
+│   │   └── apple1_keyboard.pxd/.pyx # KBD + KBDCR + circular FIFO buffer
 │   └── system/
-│       ├── config.py              # Dataclass representation
+│       ├── config.py              # Frozen dataclass representation
 │       ├── registry.py            # Type-name → class registry
 │       ├── loader.py              # YAML → SystemConfig + validation
 │       └── system.pxd/.pyx        # Orchestrator
@@ -108,6 +109,12 @@ cdef class Component:
     cdef unsigned char write(self, unsigned short address, unsigned char data):
         return 0
 
+    cdef void bind(self, object system):
+        pass
+
+    cdef void on_cycles_elapsed(self, unsigned long n):
+        pass
+
     cpdef unsigned int get_size(self): ...
     cpdef str get_name(self): ...
 ```
@@ -117,6 +124,15 @@ the bus controller itself — is a `Component`. The `read` and `write`
 methods are **`cdef`**, not `cpdef`, so they're called through Cython's
 internal virtual table with zero Python overhead once Cython knows the
 object is a `Component`.
+
+`bind(system)` is a late-binding hook fired by `System.__init__` after
+every component has been wired onto its bus. Components that need
+cross-component references or a tick-hook subscription grab them here.
+`on_cycles_elapsed(n)` is the cycle-accounting hook fired exactly once
+per `BusController.run_cycles(N)` batch for every component that
+registered via `system.register_tick_hook(self)` — **not once per
+cycle**. See `Apple1Display` for the reference use: decrementing a
+DSP busy counter without touching the CPU hot path.
 
 Subclasses override `read` and `write` to implement their behavior:
 
@@ -223,9 +239,10 @@ This design has two upsides:
 ### 3.5 Peripherals
 
 A "peripheral" is any `Component` subclass that represents real
-hardware beyond plain memory. In v0.1 that's just `Apple1` (keyboard +
-display combined), but v0.2 adds NES PPU, APU, controllers, and
-cartridge mappers.
+hardware beyond plain memory. v0.1 ships `Apple1Display` and
+`Apple1Keyboard` — the Apple I PIA is modelled as two independent
+components on the bus, matching the real 6821 — and v0.2 adds NES PPU,
+APU, controllers, and cartridge mappers.
 
 Peripherals follow a small contract:
 
@@ -236,10 +253,13 @@ Peripherals follow a small contract:
   class name.
 - **May** expose input methods (e.g. `add_character_to_kb_buffer`) for
   keyboard-like devices.
+- **May** override `cdef void bind(self, object system)` to subscribe
+  to cycle-accounting ticks via `system.register_tick_hook(self)`.
+  `Apple1Display` uses this to hold DSP bit 7 busy for one full NTSC frame
+  after a DSP write, without touching the CPU hot path.
 - **Must not** own their own clock loop. `System` is the single owner
-  of the clock. (The current `Apple1.clock()` that loops 16667 cycles
-  internally is a v0.1 anti-pattern that will be removed when `System`
-  is reimplemented.)
+  of the clock — peripherals only see tick-hook fan-out, never a Python
+  loop.
 
 ### 3.6 `System` — the orchestrator
 
@@ -248,18 +268,17 @@ Peripherals follow a small contract:
 
 ```cython
 cdef class System:
-    cdef SystemConfig _config
     cdef MOS6502 _cpu
     cdef unsigned long _cpu_hz
     cdef dict _buses                      # str → BusController
-    cdef dict _memory_regions             # str → Memory
-    cdef list _peripherals                # flattened display + inputs + audio + other
     cdef Component _display               # direct ref, avoids string lookups
+    cdef list _inputs                     # keyboard-likes, in declared order
+    cdef dict _memory_regions             # str → Memory
 ```
 
 Construction is described in detail in [SYSTEM_CONFIG.md §9](SYSTEM_CONFIG.md#9-how-system-builds-from-a-config).
-In short: resolve CPU → build buses → wire memory → wire peripherals →
-reset.
+In short: resolve CPU → build buses → wire memory → wire display → wire
+inputs → wire audio/other → `bind()` every component → reset.
 
 The **external API** is deliberately tiny:
 
@@ -267,11 +286,19 @@ The **external API** is deliberately tiny:
 cpdef void run_cycles(self, unsigned long master_cycles)
 cpdef void run_for_microseconds(self, unsigned long microseconds)
 cpdef void reset(self)
-cpdef void load_binary(self, str region_name, list data, int offset)
+cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
 cpdef Registers get_registers(self)
 cpdef void set_registers(self, Registers registers)
-def    get_framebuffer(self)               # returns self._display.get_framebuffer()
+cpdef object get_framebuffer(self)
+cpdef void register_tick_hook(self, object component)
+cpdef unsigned char peek(self, unsigned short address)
+cpdef unsigned char poke(self, unsigned short address, unsigned char data)
 ```
+
+`peek`/`poke` forward to the `main` bus and exist for tests + debug
+panels. The CPU hot path still calls the `cdef read`/`write` directly
+through the Cython vtable — these helpers are a Python-visible
+shortcut, not a detour on the clock path.
 
 Everything else (debugger hooks, memory inspection, save states) is
 layered on top of these primitives.
@@ -284,17 +311,22 @@ layered on top of these primitives.
 
 ```cython
 cpdef void run_cycles(self, unsigned long master_cycles):
-    self._buses["main"].run_cycles(master_cycles)
+    if master_cycles:
+        (<BusController>self._buses["main"]).run_cycles(master_cycles)
 
 cpdef void run_for_microseconds(self, unsigned long microseconds):
-    cdef unsigned long cycles = (microseconds * self._cpu_hz) // 1000000
-    if cycles:
-        self.run_cycles(cycles)
+    if microseconds:
+        (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
 ```
 
 The frontend calls `system.run_for_microseconds(16667)` once per UI
 frame (60 Hz → 16.67 ms → 16667 µs → 16667 cycles at 1 MHz). That one
 call executes thousands of 6502 cycles entirely in Cython.
+`BusController.run_cycles(N)` fans out a single
+`on_cycles_elapsed(N)` call per registered tick hook after the inner
+loop — **not** once per cycle — so components that need cycle-accurate
+timing (e.g. `Apple1Display`'s DSP busy bit) pay one C virtual call
+per batch.
 
 ### v0.2: multi-bus with per-bus dividers
 
@@ -321,31 +353,29 @@ divider. See [SYSTEM_CONFIG.md §3.3](SYSTEM_CONFIG.md#33-buses).
 
 ### 5.1 `Py6502App`
 
-The top-level DearPyGui shell. Its responsibilities:
+The top-level DearPyGui shell. v0.1 scope is deliberately minimal. Its
+responsibilities:
 
 - Create the DearPyGui context, viewport, and menu bar on startup.
-- Offer a `New System` menu entry that opens `SystemSelector`.
-- When a system is chosen, build the corresponding `System` and assign
-  it to `self.emulator`.
-- Run a single per-frame loop that calls
-  `self.emulator.on_update()` followed by
+- Load the Apple I preset via `System.from_yaml_file(...)` and assign
+  the result to `self.system`.
+- Run a single per-frame loop that drains key presses into
+  `self.system.inputs[0]`, calls
+  `self.system.run_for_microseconds(16667)`, pushes the framebuffer
+  into the DearPyGui texture, and then calls
   `dpg.render_dearpygui_frame()`.
 
-`on_update()` is a thin Python-side shim: it reads the key buffer,
-hands characters to the appropriate input device, calls
-`system.run_for_microseconds(16667)`, refreshes the framebuffer
-texture, and updates any debug panels. **Everything inside that shim is
-an O(1) or O(N_on_screen) operation — never O(cycles).**
+**Everything inside that loop is an O(1) or O(N_on_screen) operation —
+never O(cycles).**
 
-### 5.2 `SystemSelector`
+### 5.2 System selector (planned)
 
-The modal that reads the preset registry (preset `.yaml` configs +
-user-supplied ones), renders one card per option, and — on confirm —
-hands a `SystemConfig` to `Py6502App` to instantiate.
-
-The per-system configurators in `py6502/ui/systems/` own the right-pane
-form that lets the user tweak preset options (e.g. Apple I RAM size)
-before the `SystemConfig` is finalized.
+The system-selector modal — a presets browser that reads
+`py6502.sim.assets.presets/*.yaml`, lets the user pick one (and
+eventually tweak its preset options via per-system configurators under
+`py6502/ui/systems/`), and hands the resulting `SystemConfig` to
+`Py6502App` — is v0.1 scope but lands after the abstractions + IaC PR.
+Until then, `Py6502App` loads `apple1.yaml` directly.
 
 ### 5.3 Legacy `py6502ui.py`
 

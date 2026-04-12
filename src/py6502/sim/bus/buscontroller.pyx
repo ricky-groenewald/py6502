@@ -31,6 +31,7 @@ cdef class BusController(Component):
         self._current_bus_address = 0
         self._current_bus_data = 0
         self._current_bus_read_write_bar = 1
+        self._tick_hooks = []
         self._empty_address = EmptyAddress(
             'EmptyAddress',
             raise_on_unmapped_access
@@ -81,6 +82,14 @@ cdef class BusController(Component):
             Py_INCREF(component)
             Py_DECREF(self._empty_address) # NEED TO decrement ref count to empty address
 
+    cpdef void register_tick_hook(self, object component):
+        """
+        Subscribe a component to the batch-end tick hook. After every
+        run_cycles(N) call, the component's on_cycles_elapsed(N) cdef
+        method is invoked exactly once — not once per cycle.
+        """
+        self._tick_hooks.append(component)
+
     cpdef void testme(self):
         for _ in range(96_247_419):
             self._processor.clock()
@@ -92,9 +101,13 @@ cdef class BusController(Component):
         self._processor.clock()
 
     cpdef void run_cycles(self, unsigned long cycles):
-        cdef unsigned long i
-        for i in range(cycles):
+        cdef Py_ssize_t hook_idx
+        cdef Py_ssize_t hook_count
+        for _ in range(cycles):
             self._processor.clock()
+        hook_count = len(self._tick_hooks)
+        for hook_idx in range(hook_count):
+            (<Component>self._tick_hooks[hook_idx]).on_cycles_elapsed(cycles)
 
     cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz):
         cdef unsigned long cycles = (microseconds * cpu_hz) // 1000000

@@ -1,67 +1,166 @@
 """
 CYTHON SYSTEM ORCHESTRATION CLASS IMPLEMENTATIONS
 
-Simulator implementations and functions for a complete system orchestrator
+Thin Cython wrapper over a single BusController + CPU + component set,
+built from a declarative ``SystemConfig`` loaded via the YAML
+loader. See docs/ARCHITECTURE.md and docs/SYSTEM_CONFIG.md for the
+contract.
 """
-from py6502.sim.cpu.mos6502 cimport Registers
+from pathlib import Path
+
 from py6502.sim.bus.buscontroller cimport BusController
+from py6502.sim.bus.component cimport Component
 from py6502.sim.bus.memory cimport Memory
+from py6502.sim.cpu.mos6502 cimport MOS6502, Registers
+
+from py6502.sim.system.config import ComponentSpec, ConfigError, MemoryRegion, SystemConfig
+from py6502.sim.system.loader import from_yaml_file as _loader_from_yaml_file
+from py6502.sim.system.loader import resolve_source
+from py6502.sim.system.registry import resolve as _resolve_type
+
 
 cdef class System:
-    def __init__(self, config):
-        self._config = config
-        self._cpu = config.cpu.cpu_type()
-        self._cpu_hz = config.cpu.cpu_hz
-        self._bus = BusController("Bus Controller", self._cpu, True)
-        self._mem_regions = {}
-        self._peripherals = {}
+    def __init__(self, config, base_dir=None):
+        cdef Component component
+        cdef BusController main_bus
+        cdef Memory mem
 
-        # Map memory
-        for region in config.memory_regions:
+        if not isinstance(config, SystemConfig):
+            raise TypeError(f"System expects a SystemConfig, got {type(config).__name__}")
+
+        self._cpu_hz = config.cpu.hz
+        self._buses = {}
+        self._memory_regions = {}
+        self._inputs = []
+        self._display = None
+
+        # Resolve the CPU class via the registry, not a hardcoded import.
+        cpu_cls = _resolve_type(config.cpu.type)
+        self._cpu = cpu_cls()
+
+        main_bus = BusController("main", self._cpu, True)
+        self._buses["main"] = main_bus
+
+        # --- Memory regions ---------------------------------------------
+        resolve_base = Path(base_dir) if base_dir is not None else Path.cwd()
+        for region in config.memory:
             mem = Memory(region.size, region.name, region.read_only)
-            if region.initial_data is not None:
-                mem.set_data(list(region.initial_data), region.initial_offset)
-            self._bus.add_component(mem, region.start_address)
-            self._mem_regions[region.name] = mem
+            if region.source is not None:
+                data = resolve_source(region.source, resolve_base)
+                mem.set_data(list(data), region.load_offset)
+            self._wire_component(mem, region.start, region.bus)
+            self._memory_regions[region.name] = mem
 
-        # Map peripherals
-        for spec in config.peripherals:
-            periph = spec.peripheral_type(self._bus, **spec.params)
-            self._bus.add_component(periph, spec.start_address)
-            self._peripherals[spec.name] = periph
+        # --- Display ----------------------------------------------------
+        if config.display is not None:
+            component = self._instantiate_component(config.display)
+            self._wire_component(component, config.display.address, config.display.bus)
+            self._display = component
 
-        self._bus.send_reset()
+        # --- Inputs -----------------------------------------------------
+        for spec in config.inputs:
+            component = self._instantiate_component(spec)
+            self._wire_component(component, spec.address, spec.bus)
+            self._inputs.append(component)
 
-    cpdef void run_cycles(self, unsigned long cpu_cycles):
-        if cpu_cycles > 0:
-            self._bus.run_cycles(cpu_cycles)
+        # --- Audio ------------------------------------------------------
+        if config.audio is not None:
+            component = self._instantiate_component(config.audio)
+            self._wire_component(component, config.audio.address, config.audio.bus)
+
+        # --- Other ------------------------------------------------------
+        for spec in config.other:
+            component = self._instantiate_component(spec)
+            self._wire_component(component, spec.address, spec.bus)
+
+        # Late-binding: every component gets a chance to grab cross-
+        # component refs or subscribe to tick hooks now that every other
+        # component has been added to the bus.
+        if self._display is not None:
+            (<Component>self._display).bind(self)
+        for input_component in self._inputs:
+            (<Component>input_component).bind(self)
+
+        main_bus.send_reset()
+
+    @classmethod
+    def from_yaml_file(cls, path):
+        """Load and validate a YAML config, then build a System from it."""
+        path = Path(path)
+        config = _loader_from_yaml_file(path)
+        return cls(config, base_dir=path.parent)
+
+    # The property is defined Python-side so the UI can iterate it.
+    @property
+    def inputs(self):
+        return self._inputs
+
+    @property
+    def display(self):
+        return self._display
+
+    @property
+    def cpu_hz(self):
+        return self._cpu_hz
+
+    cpdef void run_cycles(self, unsigned long cycles):
+        if cycles:
+            (<BusController>self._buses["main"]).run_cycles(cycles)
 
     cpdef void run_for_microseconds(self, unsigned long microseconds):
-        if microseconds > 0:
-            self._bus.run_for_microseconds(microseconds, self._cpu_hz)
+        if microseconds:
+            (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
 
     cpdef void reset(self):
-        self._bus.send_reset()
+        (<BusController>self._buses["main"]).send_reset()
 
-    cpdef void load_binary(self, str dest_memory, list data, int start_address):
-        if dest_memory not in self._mem_regions:
-            raise KeyError(f"Unknown memory region: {dest_memory}")
-        (<Memory>self._mem_regions[dest_memory]).set_data(list(data), start_address)
+    cpdef void load_binary(self, str region_name, unsigned int offset, bytes data):
+        if region_name not in self._memory_regions:
+            raise KeyError(f"Unknown memory region: {region_name}")
+        (<Memory>self._memory_regions[region_name]).set_data(list(data), offset)
 
     cpdef Registers get_registers(self):
-        return self._bus.get_registers()
+        return (<BusController>self._buses["main"]).get_registers()
 
-    # TODO: Add more generic way to get framebuffer
-    def get_framebuffer(self):
-        periph = self._peripherals.get("Apple1")
-        if periph is None:
+    cpdef void set_registers(self, Registers registers):
+        (<BusController>self._buses["main"]).set_registers(registers)
+
+    cpdef object get_framebuffer(self):
+        if self._display is None:
             return None
-        return periph.get_screen_buffer()
+        return self._display.get_framebuffer()
 
-    def audio_buffer_depth(self):
-        return 0
+    cpdef void register_tick_hook(self, object component):
+        (<BusController>self._buses["main"]).register_tick_hook(component)
 
-    def audio_buffer_capacity(self):
-        return 0
+    cpdef unsigned char peek(self, unsigned short address):
+        return (<BusController>self._buses["main"]).read(address)
 
+    cpdef unsigned char poke(self, unsigned short address, unsigned char data):
+        return (<BusController>self._buses["main"]).write(address, data)
 
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+    cdef Component _instantiate_component(self, object spec):
+        cls = _resolve_type(spec.type)
+        try:
+            instance = cls(**spec.params)
+        except TypeError as exc:
+            raise ConfigError(
+                f"Failed to instantiate {spec.type!r}: {exc}"
+            ) from exc
+        if not isinstance(instance, Component):
+            raise ConfigError(
+                f"Registered type {spec.type!r} did not produce a Component subclass"
+            )
+        return <Component>instance
+
+    cdef void _wire_component(self, Component component, unsigned int address, str bus_name):
+        # Single-point-of-truth for bus wiring. Today this is a direct
+        # add_component call; when non-contiguous address ranges are
+        # added (see ComponentSpec docstring), the extension lives
+        # here.
+        if bus_name not in self._buses:
+            raise ConfigError(f"Component references unknown bus {bus_name!r}")
+        (<BusController>self._buses[bus_name]).add_component(component, address)

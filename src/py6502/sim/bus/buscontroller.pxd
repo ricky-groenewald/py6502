@@ -25,8 +25,10 @@ cdef class BusController(Component):
     cdef unsigned char _current_bus_data
     cdef bint _current_bus_read_write_bar
     cdef EmptyAddress _empty_address
+    cdef list _tick_hooks
 
     cpdef void add_component(self, Component component, unsigned int address_start) except *
+    cpdef void register_tick_hook(self, object component)
 
     cpdef void testme(self)
     cpdef bint check_success(self)

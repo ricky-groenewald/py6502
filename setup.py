@@ -7,6 +7,7 @@ include_dirs = [
     "src/py6502/sim/cpu",
     "src/py6502/sim/graphics",
     "src/py6502/sim/peripherals",
+    "src/py6502/sim/system",
 ]
 
 common_cflags = ['-O3', '-march=native', '-flto']
@@ -22,16 +23,15 @@ def ext(module, source):
     )
 
 extensions = [
-    ext("py6502.sim.bus.component",      "src/py6502/sim/bus/component.pyx"),
-    ext("py6502.sim.bus.memory",         "src/py6502/sim/bus/memory.pyx"),
-    ext("py6502.sim.bus.buscontroller",  "src/py6502/sim/bus/buscontroller.pyx"),
-    ext("py6502.sim.bus.emptyaddress",   "src/py6502/sim/bus/emptyaddress.pyx"),
-    ext("py6502.sim.cpu.mos6502",        "src/py6502/sim/cpu/mos6502.pyx"),
-    ext("py6502.sim.graphics.textdisplay", "src/py6502/sim/graphics/textdisplay.pyx"),
-    ext("py6502.sim.peripherals.apple1", "src/py6502/sim/peripherals/apple1.pyx"),
-    # py6502.sim.system.system — intentionally not built. The current drafts
-    # are design references; the module will be reimplemented against the
-    # IaC config spec as the first piece of v0.1 implementation work.
+    ext("py6502.sim.bus.component",                "src/py6502/sim/bus/component.pyx"),
+    ext("py6502.sim.bus.memory",                   "src/py6502/sim/bus/memory.pyx"),
+    ext("py6502.sim.bus.buscontroller",            "src/py6502/sim/bus/buscontroller.pyx"),
+    ext("py6502.sim.bus.emptyaddress",             "src/py6502/sim/bus/emptyaddress.pyx"),
+    ext("py6502.sim.cpu.mos6502",                  "src/py6502/sim/cpu/mos6502.pyx"),
+    ext("py6502.sim.graphics.textdisplay",         "src/py6502/sim/graphics/textdisplay.pyx"),
+    ext("py6502.sim.peripherals.apple1_display",   "src/py6502/sim/peripherals/apple1_display.pyx"),
+    ext("py6502.sim.peripherals.apple1_keyboard",  "src/py6502/sim/peripherals/apple1_keyboard.pyx"),
+    ext("py6502.sim.system.system",                "src/py6502/sim/system/system.pyx"),
 ]
 
 setup(

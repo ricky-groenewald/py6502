@@ -1,9 +1,31 @@
 """
 System orchestration layer for py6502.sim.
 
-Under redesign. The current source files (`config.py`, `system.pyx`,
-`system.pxd`) are retained as drafts and are intentionally not built into
-the package right now — they will be reimplemented from scratch against
-the IaC config spec in docs/SYSTEM_CONFIG.md as the first piece of v0.1
-implementation work.
+Public surface:
+    - ``System``            — the Cython orchestrator
+    - ``SystemConfig``      — frozen dataclass representation of a config
+    - ``ConfigError``       — raised by the loader on validation failures
+    - ``from_yaml_file``    — load + validate a YAML config into a
+      ``SystemConfig``
 """
+from .config import (
+    BusSpec,
+    ComponentSpec,
+    ConfigError,
+    CpuSpec,
+    MemoryRegion,
+    SystemConfig,
+)
+from .loader import from_yaml_file
+from .system import System
+
+__all__ = [
+    "BusSpec",
+    "ComponentSpec",
+    "ConfigError",
+    "CpuSpec",
+    "MemoryRegion",
+    "System",
+    "SystemConfig",
+    "from_yaml_file",
+]

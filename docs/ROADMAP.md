@@ -65,6 +65,7 @@ wrong here, every later release pays for it.
 - [#25](https://github.com/ricky-groenewald/py6502/issues/25) — [BUG] Invalid opcodes / unmapped memory accesses
 - [#29](https://github.com/ricky-groenewald/py6502/issues/29) — Abstractize display + input devices
 - [#31](https://github.com/ricky-groenewald/py6502/issues/31) — Apple I authenticity
+- [#34](https://github.com/ricky-groenewald/py6502/issues/34) — Implement `py6502.sim.system` against IaC spec
 
 **Explicit non-goals for v0.1.**
 
