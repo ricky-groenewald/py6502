@@ -210,7 +210,7 @@ class Py6502App:
         base = page << 8
         lines: list[str] = []
         try:
-            first_byte = self.system.peek(base)
+            self.system.peek(base)
         except UnallocatedAddressError:
             dpg.set_value("mem_monitor", f"{base:04X}: Unmapped memory range")
             dpg.configure_item("mem_monitor", color=(255, 0, 0))
@@ -259,6 +259,7 @@ class Py6502App:
         self._sim_running = True
         dpg.configure_item("play_button", enabled=False)
         dpg.configure_item("pause_button", enabled=True)
+        dpg.focus_item(VIDEO_WINDOW_TAG)
 
     def _pause_handler(self) -> None:
         self._sim_running = False
@@ -272,6 +273,7 @@ class Py6502App:
         self._key_buffer.clear()
         dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
         self._refresh_debug_panels()
+        dpg.focus_item(VIDEO_WINDOW_TAG)
 
     def _reset_system(self) -> None:
         # Menu-bar entry; forwards to the main reset handler.
@@ -282,6 +284,8 @@ class Py6502App:
 
     def _on_key_press(self, sender, app_data, user_data) -> None:
         if self.system is None:
+            return
+        if not dpg.get_item_state(VIDEO_WINDOW_TAG).get("focused", False):
             return
 
         shift_down = dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift)
