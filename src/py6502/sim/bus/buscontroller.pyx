@@ -7,6 +7,7 @@ from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
 from cython cimport boundscheck, wraparound
 from py6502.sim.bus.component cimport Component
 from py6502.sim.bus.emptyaddress cimport EmptyAddress
+from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 cimport MOS6502, Registers
 
 class ComponentSizeError(Exception):
@@ -36,6 +37,7 @@ cdef class BusController(Component):
             'EmptyAddress',
             raise_on_unmapped_access
         )
+        self._empty_address.set_bus_data_ptr(&self._current_bus_data)
 
         for i in range(0x10000):
             self._component_address_map[i].component = <PyObject*>self._empty_address
@@ -97,10 +99,10 @@ cdef class BusController(Component):
     cpdef bint check_success(self):
         return self.read(0x0200) == 0xF0
 
-    cpdef void clock(self):
+    cpdef void clock(self) except *:
         self._processor.clock()
 
-    cpdef void run_cycles(self, unsigned long cycles):
+    cpdef void run_cycles(self, unsigned long cycles) except *:
         cdef Py_ssize_t hook_idx
         cdef Py_ssize_t hook_count
         for _ in range(cycles):
@@ -109,7 +111,7 @@ cdef class BusController(Component):
         for hook_idx in range(hook_count):
             (<Component>self._tick_hooks[hook_idx]).on_cycles_elapsed(cycles)
 
-    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz):
+    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *:
         cdef unsigned long cycles = (microseconds * cpu_hz) // 1000000
         if cycles:
             self.run_cycles(cycles)
@@ -123,6 +125,13 @@ cdef class BusController(Component):
     cpdef void set_registers(self, Registers registers):
         self._processor.set_registers(registers)
 
+    cpdef bint is_mapped(self, unsigned short address):
+        return (<Component>self._component_address_map[address].component
+                is not self._empty_address)
+
+    cpdef void set_unmapped_memory_mode(self, bint crash):
+        self._empty_address._raise_on_unmapped = crash
+
     def get_bus_values(self):
         return (
             self._current_bus_address,
@@ -134,11 +143,14 @@ cdef class BusController(Component):
     # Bounds checking disabled since short address is always within bus controller's address range
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char read(self, unsigned short address):
+    cdef unsigned char read(self, unsigned short address) except *:
         cdef MappedAddress mapped_address = self._component_address_map[address]
 
         self._current_bus_address = address
-        self._current_bus_data = (<Component>mapped_address.component).read(mapped_address.internal_address)
+        try:
+            self._current_bus_data = (<Component>mapped_address.component).read(mapped_address.internal_address)
+        except UnallocatedAddressError:
+            raise
         self._current_bus_read_write_bar = 1
 
         return self._current_bus_data
@@ -147,11 +159,14 @@ cdef class BusController(Component):
     # Bounds checking disabled since short address is always within bus controller's address range
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
         cdef MappedAddress mapped_address = self._component_address_map[address]
 
         self._current_bus_address = address
-        self._current_bus_data = (<Component>mapped_address.component).write(mapped_address.internal_address, data)
+        try:
+            self._current_bus_data = (<Component>mapped_address.component).write(mapped_address.internal_address, data)
+        except UnallocatedAddressError:
+            raise
         self._current_bus_read_write_bar = 0
 
         return self._current_bus_data

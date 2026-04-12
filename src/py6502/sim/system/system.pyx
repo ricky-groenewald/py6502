@@ -38,7 +38,7 @@ cdef class System:
         cpu_cls = _resolve_type(config.cpu.type)
         self._cpu = cpu_cls()
 
-        main_bus = BusController("main", self._cpu, True)
+        main_bus = BusController("main", self._cpu, False)
         self._buses["main"] = main_bus
 
         # --- Memory regions ---------------------------------------------
@@ -103,11 +103,11 @@ cdef class System:
     def cpu_hz(self):
         return self._cpu_hz
 
-    cpdef void run_cycles(self, unsigned long cycles):
+    cpdef void run_cycles(self, unsigned long cycles) except *:
         if cycles:
             (<BusController>self._buses["main"]).run_cycles(cycles)
 
-    cpdef void run_for_microseconds(self, unsigned long microseconds):
+    cpdef void run_for_microseconds(self, unsigned long microseconds) except *:
         if microseconds:
             (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
 
@@ -138,6 +138,15 @@ cdef class System:
 
     cpdef unsigned char poke(self, unsigned short address, unsigned char data):
         return (<BusController>self._buses["main"]).write(address, data)
+
+    cpdef bint is_mapped(self, unsigned short address):
+        return (<BusController>self._buses["main"]).is_mapped(address)
+
+    cpdef void set_invalid_opcode_mode(self, unsigned char mode):
+        self._cpu.set_invalid_opcode_mode(mode)
+
+    cpdef void set_unmapped_memory_mode(self, bint crash):
+        (<BusController>self._buses["main"]).set_unmapped_memory_mode(crash)
 
     # ------------------------------------------------------------------
     # Private helpers

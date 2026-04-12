@@ -39,14 +39,14 @@ cdef class Memory(Component):
     # Bounds checking disabled since read should only be accessed through the bus controller
     @boundscheck(False)
     @wraparound(False)
-    cdef inline unsigned char read(self, unsigned short address):
+    cdef inline unsigned char read(self, unsigned short address) except *:
         return self._data[address]
 
     # Wraparound disabled since address is strictly positive
     # Bounds checking disabled since write should only be accessed through the bus controller
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
         if not self._read_only:
             self._data[address] = data
 

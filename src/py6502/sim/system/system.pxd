@@ -13,8 +13,8 @@ cdef class System:
     cdef list _inputs
     cdef dict _memory_regions
 
-    cpdef void run_cycles(self, unsigned long cycles)
-    cpdef void run_for_microseconds(self, unsigned long microseconds)
+    cpdef void run_cycles(self, unsigned long cycles) except *
+    cpdef void run_for_microseconds(self, unsigned long microseconds) except *
     cpdef void reset(self)
     cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
     cpdef Registers get_registers(self)
@@ -23,6 +23,9 @@ cdef class System:
     cpdef void register_tick_hook(self, object component)
     cpdef unsigned char peek(self, unsigned short address)
     cpdef unsigned char poke(self, unsigned short address, unsigned char data)
+    cpdef bint is_mapped(self, unsigned short address)
+    cpdef void set_invalid_opcode_mode(self, unsigned char mode)
+    cpdef void set_unmapped_memory_mode(self, bint crash)
 
     cdef Component _instantiate_component(self, object spec)
     cdef void _wire_component(self, Component component, unsigned int address, str bus_name)

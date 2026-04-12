@@ -38,7 +38,7 @@ cdef class Component:
         return self._size
 
     # Abstract class
-    cdef unsigned char read(self, unsigned short address):
+    cdef unsigned char read(self, unsigned short address) except *:
         """
         SHOULD NOT BE ACCESSED PUBLICLY
 
@@ -53,7 +53,7 @@ cdef class Component:
         raise NotImplementedError("Subclass must implement this method")
 
     # Abstract class
-    cdef unsigned char write(self, unsigned short address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
         """
         SHOULD NOT BE ACCESSED PUBLICLY
 

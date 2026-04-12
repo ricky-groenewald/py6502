@@ -103,10 +103,10 @@ cdef class Component:
     cdef unsigned int _size
     cdef str _name
 
-    cdef unsigned char read(self, unsigned short address):
+    cdef unsigned char read(self, unsigned short address) except *:
         return 0
 
-    cdef unsigned char write(self, unsigned short address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
         return 0
 
     cdef void bind(self, object system):
@@ -141,10 +141,10 @@ cdef class Memory(Component):
     cdef unsigned char[::1] _data
     cdef bint _read_only
 
-    cdef unsigned char read(self, unsigned short address):
+    cdef unsigned char read(self, unsigned short address) except *:
         return self._data[address]
 
-    cdef unsigned char write(self, unsigned short address, unsigned char data):
+    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
         if not self._read_only:
             self._data[address] = data
         return data
@@ -179,9 +179,24 @@ checking is explicitly disabled via `@boundscheck(False)` because the
 address is already masked to 16 bits).
 
 Unmapped addresses point at an `EmptyAddress` sentinel instance. The
-sentinel can optionally raise on access (useful during development for
-spotting bugs) or return a sensible default (useful once the machine is
-stable).
+sentinel's behavior is user-configurable at runtime:
+
+- **Open bus** (default): reads return the last value on the data bus,
+  writes are silently dropped. This matches real 6502 hardware behavior.
+- **Crash**: reads and writes raise `UnallocatedAddressError`, which
+  propagates through the `except *` call chain to the UI. The UI pauses
+  the simulator and only allows a reset to resume.
+
+Invalid opcodes follow a similar pattern in `MOS6502.load_op_code()`:
+
+- **Crash** (default): raises `InvalidOPCode` with the opcode byte and
+  address. The UI catches it and pauses.
+- **NOP**: the invalid opcode is treated as a 2-cycle implied NOP and
+  execution continues.
+
+Both settings are toggled through `System.set_unmapped_memory_mode()`
+and `System.set_invalid_opcode_mode()`, exposed in the UI's Settings
+menu.
 
 `BusController.add_component(component, address_start)`:
 
