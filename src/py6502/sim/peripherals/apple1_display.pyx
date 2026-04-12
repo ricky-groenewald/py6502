@@ -59,11 +59,6 @@ cdef class Apple1Display(Component):
             stripped = data & 0x7F
             if stripped == 0x0D:
                 self._text_display.place_character(stripped)
-            elif stripped == 0x08:
-                # Simulator convenience: wozmon's echo of a backspace key
-                # walks the cursor back one character. Real hardware had
-                # no backspace — users typed '_' to indicate delete.
-                self._text_display.backspace()
             elif 0x20 <= stripped <= 0x5F:
                 self._text_display.place_character(stripped)
             elif stripped >= 0x60:

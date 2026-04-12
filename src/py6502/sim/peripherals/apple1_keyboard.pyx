@@ -5,10 +5,9 @@ Register file (component-relative):
     offset 0 — KBD   ($D010 on the bus)
     offset 1 — KBDCR ($D011 on the bus)
 
-v0.1 preserves the original 8-byte LIFO buffer + backspace handling from
-the old monolithic Apple1 class verbatim. The "LIFO should be a latch"
-historical bug is intentionally left alone in this split — fixing it is
-a separate task.
+Characters arrive with bit 7 set (Apple I convention). The buffer is a
+circular FIFO. Backspace (0x08) is translated to underscore (0x5F) — the
+Apple I rubout character — so wozmon handles it natively.
 """
 from cython cimport boundscheck, wraparound
 from libc.stdlib cimport malloc, free
@@ -35,6 +34,9 @@ cdef class Apple1Keyboard(Component):
 
     cpdef bint add_character_to_kb_buffer(self, unsigned char char_):
         if self._kbd_buffer_current_index != self._kbd_buffer_last_index:
+            # Apple I rubout: backspace → underscore.
+            if char_ == 0x08:
+                char_ = 0x5F
             # The Apple 1 keyboard controller expects bit 7 set on incoming chars.
             self._kbd_buffer[self._kbd_buffer_last_index] = char_ | 0x80
             self._kbd_buffer_last_index = (self._kbd_buffer_last_index + 1) % KBD_BUFFER_SIZE
