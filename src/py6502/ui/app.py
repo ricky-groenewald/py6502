@@ -10,6 +10,7 @@ from importlib import resources
 
 import dearpygui.dearpygui as dpg
 
+from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.system import System
 from py6502.ui.utils.instructionmaps import INSTRUCTION_MAP_6502
 
@@ -169,10 +170,11 @@ class Py6502App:
     # ------------------------------------------------------------------
     def run(self) -> None:
         while dpg.is_dearpygui_running():
-            if self.system is not None and self._sim_running:
-                self._drain_keys_into_system()
-                self.system.run_for_microseconds(FRAME_MICROSECONDS)
-                dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
+            if self.system is not None:
+                if self._sim_running:
+                    self._drain_keys_into_system()
+                    self.system.run_for_microseconds(FRAME_MICROSECONDS)
+                    dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
                 self._refresh_debug_panels()
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
@@ -207,6 +209,13 @@ class Py6502App:
         page = self._mem_monitor_page
         base = page << 8
         lines: list[str] = []
+        try:
+            first_byte = self.system.peek(base)
+        except UnallocatedAddressError:
+            dpg.set_value("mem_monitor", f"{base:04X}: Unmapped memory range")
+            dpg.configure_item("mem_monitor", color=(255, 0, 0))
+            return
+        dpg.configure_item("mem_monitor", color=(255, 255, 255))
         for row in range(0, 0x100, 16):
             addr = base + row
             row_bytes = [self.system.peek(addr + i) for i in range(16)]
