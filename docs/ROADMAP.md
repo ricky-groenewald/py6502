@@ -60,12 +60,9 @@ wrong here, every later release pays for it.
 **Open issues in GitHub milestone "v0.1 Release - First 6502 release":**
 
 - [#3](https://github.com/ricky-groenewald/py6502/issues/3) — 6502: Better code comments
-- [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM and (now retired) ASM
+- [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
 - [#8](https://github.com/ricky-groenewald/py6502/issues/8) — Basic User Interface
-- [#25](https://github.com/ricky-groenewald/py6502/issues/25) — [BUG] Invalid opcodes / unmapped memory accesses
-- [#29](https://github.com/ricky-groenewald/py6502/issues/29) — Abstractize display + input devices
-- [#31](https://github.com/ricky-groenewald/py6502/issues/31) — Apple I authenticity
-- [#34](https://github.com/ricky-groenewald/py6502/issues/34) — Implement `py6502.sim.system` against IaC spec
+- [#25](https://github.com/ricky-groenewald/py6502/issues/25) — [BUG] On invalid opcodes / invalid memory addresses
 
 **Explicit non-goals for v0.1.**
 
@@ -123,16 +120,16 @@ divider-aware before it's useful.
 **Open issues in GitHub milestone "v0.2 Release - Famicom / NES release":**
 
 - [#2](https://github.com/ricky-groenewald/py6502/issues/2) — 6502: Create tests
-- [#4](https://github.com/ricky-groenewald/py6502/issues/4) — GitHub Actions: automated testing
-- [#6](https://github.com/ricky-groenewald/py6502/issues/6) — 6502 illegal opcodes
-- [#12](https://github.com/ricky-groenewald/py6502/issues/12) — NES emulation
-- [#13](https://github.com/ricky-groenewald/py6502/issues/13) — Cartridge loading / mappers
-- [#14](https://github.com/ricky-groenewald/py6502/issues/14) — Character / tile map display
-- [#15](https://github.com/ricky-groenewald/py6502/issues/15) — Background display
-- [#16](https://github.com/ricky-groenewald/py6502/issues/16) — Sprites display
-- [#17](https://github.com/ricky-groenewald/py6502/issues/17) — Controller input
+- [#4](https://github.com/ricky-groenewald/py6502/issues/4) — Github actions: Automated testing upon pushing / PR / etc.
+- [#6](https://github.com/ricky-groenewald/py6502/issues/6) — Add 6502 illegal opcodes support
+- [#12](https://github.com/ricky-groenewald/py6502/issues/12) — NES Emulation
+- [#13](https://github.com/ricky-groenewald/py6502/issues/13) — Cartridge Loading / Mappers
+- [#14](https://github.com/ricky-groenewald/py6502/issues/14) — Character / Tile map display
+- [#15](https://github.com/ricky-groenewald/py6502/issues/15) — Background Display
+- [#16](https://github.com/ricky-groenewald/py6502/issues/16) — Sprites Display
+- [#17](https://github.com/ricky-groenewald/py6502/issues/17) — Controller Input
 - [#18](https://github.com/ricky-groenewald/py6502/issues/18) — Audio
-- [#27](https://github.com/ricky-groenewald/py6502/issues/27) — Variable timing / clock model
+- [#27](https://github.com/ricky-groenewald/py6502/issues/27) — Variable Timing/Clock Model
 - [#32](https://github.com/ricky-groenewald/py6502/issues/32) — Multiprocessing sim/frontend split
 - [#33](https://github.com/ricky-groenewald/py6502/issues/33) — Frontend library re-evaluation (DearPyGui friction)
 
@@ -165,11 +162,11 @@ fixture scaffolding itself ships in v0.1; v0.2 expands it.
 
 **Open issues in GitHub milestone "v0.3 Release - Development Tools":**
 
-- [#5](https://github.com/ricky-groenewald/py6502/issues/5) — 65C02 opcode support
+- [#5](https://github.com/ricky-groenewald/py6502/issues/5) — Add 65c02 opcode support
 - [#19](https://github.com/ricky-groenewald/py6502/issues/19) — Complete assembler solution
-- [#21](https://github.com/ricky-groenewald/py6502/issues/21) — Customize + package DearPyGui
-- [#24](https://github.com/ricky-groenewald/py6502/issues/24) — Save code snippets
-- [#26](https://github.com/ricky-groenewald/py6502/issues/26) — Character map / sprite editors
+- [#21](https://github.com/ricky-groenewald/py6502/issues/21) — Customize and package dearpygui/imgui
+- [#24](https://github.com/ricky-groenewald/py6502/issues/24) — Enable saving of code snippets
+- [#26](https://github.com/ricky-groenewald/py6502/issues/26) — Character Map / Sprite Editors
 
 ---
 
