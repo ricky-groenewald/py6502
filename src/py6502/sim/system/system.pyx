@@ -90,15 +90,6 @@ cdef class System:
         config = _loader_from_yaml_file(path)
         return cls(config, base_dir=path.parent)
 
-    # The property is defined Python-side so the UI can iterate it.
-    @property
-    def inputs(self):
-        return self._inputs
-
-    @property
-    def display(self):
-        return self._display
-
     @property
     def cpu_hz(self):
         return self._cpu_hz
@@ -128,7 +119,7 @@ cdef class System:
     cpdef object get_framebuffer(self):
         if self._display is None:
             return None
-        return self._display.get_framebuffer()
+        return (<Component>self._display).get_framebuffer()
 
     cpdef void register_tick_hook(self, object component):
         (<BusController>self._buses["main"]).register_tick_hook(component)
@@ -147,6 +138,15 @@ cdef class System:
 
     cpdef void set_unmapped_memory_mode(self, bint crash):
         (<BusController>self._buses["main"]).set_unmapped_memory_mode(crash)
+
+    cpdef bint send_key(self, unsigned char char_):
+        if not self._inputs:
+            return False
+        return (<Component>self._inputs[0]).send_input(char_)
+
+    cpdef void clear_input_buffer(self):
+        if self._inputs:
+            (<Component>self._inputs[0]).clear_input()
 
     # ------------------------------------------------------------------
     # Private helpers

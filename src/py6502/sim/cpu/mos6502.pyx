@@ -269,7 +269,7 @@ cdef class MOS6502:
     cdef void set_registers(self, Registers registers):
         self._registers = registers
 
-    def set_memory_bus(self, Component memory_bus):
+    cdef void set_memory_bus(self, Component memory_bus):
         self._memory_bus = memory_bus
 
     cdef void set_invalid_opcode_mode(self, unsigned char mode):

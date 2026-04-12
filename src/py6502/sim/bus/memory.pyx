@@ -52,7 +52,7 @@ cdef class Memory(Component):
 
         return data
 
-    def set_data(self, data: list[int], start_address: int=0x0000) -> None:
+    cdef void set_data(self, list data, int start_address) except *:
         """
         Writes data to memory starting at the specified address.
 
@@ -75,7 +75,7 @@ cdef class Memory(Component):
         for i, byte in enumerate(data):
             self._data[start_address + i] = <unsigned char>byte
 
-    def get_data(self, start_address: int, size: int) -> list[int]:
+    cdef list get_data(self, int start_address, int size):
         """
         Reads a block of data from memory.
 

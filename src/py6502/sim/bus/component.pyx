@@ -87,3 +87,15 @@ cdef class Component:
         this hook is cheap even when many components subscribe.
         """
         pass
+
+    cdef list get_framebuffer(self):
+        """Return an RGBA float list for display components. Default: None."""
+        return None
+
+    cdef bint send_input(self, unsigned char char_):
+        """Accept an input byte (e.g. a key press). Default: False (ignored)."""
+        return False
+
+    cdef void clear_input(self):
+        """Clear any pending input buffer. Default: no-op."""
+        pass

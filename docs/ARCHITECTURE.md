@@ -115,8 +115,13 @@ cdef class Component:
     cdef void on_cycles_elapsed(self, unsigned long n):
         pass
 
-    cpdef unsigned int get_size(self): ...
-    cpdef str get_name(self): ...
+    cdef inline unsigned int get_size(self): ...
+    cdef inline str get_name(self): ...
+
+    # Optional overrides for display / input devices
+    cdef list get_framebuffer(self): ...    # default: None
+    cdef bint send_input(self, unsigned char char_): ...  # default: False
+    cdef void clear_input(self): ...        # default: no-op
 ```
 
 Every addressable thing in the simulator — RAM, ROM, peripherals, even
@@ -263,11 +268,13 @@ Peripherals follow a small contract:
 
 - **Must** override `cdef read(addr)` and `cdef write(addr, data)` for
   their register file.
-- **May** expose `get_framebuffer()` returning an RGBA buffer if they
-  are a display device. `System` uses this contract, *not* a hardcoded
-  class name.
-- **May** expose input methods (e.g. `add_character_to_kb_buffer`) for
-  keyboard-like devices.
+- **May** override `cdef list get_framebuffer(self)` (defined on
+  `Component`) returning an RGBA buffer if they are a display device.
+  `System.get_framebuffer()` calls through the base-class vtable.
+- **May** override `cdef bint send_input(self, unsigned char)` and
+  `cdef void clear_input(self)` for keyboard-like devices.
+  `System.send_key()` / `System.clear_input_buffer()` call through the
+  base-class vtable.
 - **May** override `cdef void bind(self, object system)` to subscribe
   to cycle-accounting ticks via `system.register_tick_hook(self)`.
   `Apple1Display` uses this to hold DSP bit 7 busy for one full NTSC frame
@@ -308,6 +315,11 @@ cpdef object get_framebuffer(self)
 cpdef void register_tick_hook(self, object component)
 cpdef unsigned char peek(self, unsigned short address)
 cpdef unsigned char poke(self, unsigned short address, unsigned char data)
+cpdef bint is_mapped(self, unsigned short address)
+cpdef void set_invalid_opcode_mode(self, unsigned char mode)
+cpdef void set_unmapped_memory_mode(self, bint crash)
+cpdef bint send_key(self, unsigned char char_)
+cpdef void clear_input_buffer(self)
 ```
 
 `peek`/`poke` forward to the `main` bus and exist for tests + debug
@@ -374,8 +386,8 @@ responsibilities:
 - Create the DearPyGui context, viewport, and menu bar on startup.
 - Load the Apple I preset via `System.from_yaml_file(...)` and assign
   the result to `self.system`.
-- Run a single per-frame loop that drains key presses into
-  `self.system.inputs[0]`, calls
+- Run a single per-frame loop that drains key presses via
+  `self.system.send_key(char)`, calls
   `self.system.run_for_microseconds(16667)`, pushes the framebuffer
   into the DearPyGui texture, and then calls
   `dpg.render_dearpygui_frame()`.

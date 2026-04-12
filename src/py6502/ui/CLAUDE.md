@@ -21,7 +21,7 @@ py6502ui.py               LEGACY monolithic UI — do not port features into
 
 v0.1's `app.py` is deliberately minimal: it loads the Apple I preset via
 `System.from_yaml_file`, renders one 256×240 texture, pipes key presses
-into `system.inputs[0]`, and calls `system.run_for_microseconds(16667)`
+via `system.send_key(char)`, and calls `system.run_for_microseconds(16667)`
 once per frame. The system-selector dialog, debug panels, and memory
 monitor are the rest of the v0.1 scope and land on top of this shell.
 

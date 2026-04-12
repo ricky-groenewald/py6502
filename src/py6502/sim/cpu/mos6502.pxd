@@ -54,6 +54,7 @@ cdef class MOS6502:
     cdef void send_irq(self)
     cdef void send_nmi(self)
     cdef void load_op_code(self) except *
+    cdef void set_memory_bus(self, Component memory_bus)
     cdef void set_invalid_opcode_mode(self, unsigned char mode)
     cdef void clear_bcd_opcodes(self)
     cdef void set_bcd_opcodes(self)

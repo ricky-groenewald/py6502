@@ -32,7 +32,7 @@ cdef class Apple1Keyboard(Component):
         if self._kbd_buffer is not NULL:
             free(self._kbd_buffer)
 
-    cpdef bint add_character_to_kb_buffer(self, unsigned char char_):
+    cdef bint add_character_to_kb_buffer(self, unsigned char char_):
         if self._kbd_buffer_current_index != self._kbd_buffer_last_index:
             # Apple I rubout: backspace → underscore.
             if char_ == 0x08:
@@ -43,9 +43,15 @@ cdef class Apple1Keyboard(Component):
             return True
         return False
 
-    cpdef void clear_kbd_buffer(self):
+    cdef void clear_kbd_buffer(self):
         self._kbd_buffer_current_index = KBD_BUFFER_SIZE - 1
         self._kbd_buffer_last_index = 0
+
+    cdef bint send_input(self, unsigned char char_):
+        return self.add_character_to_kb_buffer(char_)
+
+    cdef void clear_input(self):
+        self.clear_kbd_buffer()
 
     @boundscheck(False)
     @wraparound(False)

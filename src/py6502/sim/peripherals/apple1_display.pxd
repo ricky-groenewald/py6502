@@ -10,4 +10,4 @@ cdef class Apple1Display(Component):
     cdef unsigned char write(self, unsigned short address, unsigned char data) except *
     cdef void bind(self, object system)
     cdef void on_cycles_elapsed(self, unsigned long n)
-    cpdef list get_framebuffer(self)
+    cdef list get_framebuffer(self)
