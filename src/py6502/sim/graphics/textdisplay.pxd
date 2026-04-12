@@ -6,7 +6,7 @@ cdef class Font:
     cdef unsigned char height
     cdef unsigned char set_size
 
-    cpdef void _create_character_set(self, char* filename) except *
+    cdef void _create_character_set(self, char* filename) except *
     cdef inline bint get_character_pixel(self, unsigned char character, unsigned char x, unsigned char y)
 
 cdef class TextDisplay:
@@ -28,7 +28,7 @@ cdef class TextDisplay:
     cdef unsigned char _character_max_rows
     cdef float[3][4] _colors #RGBA - 0 = background, 1 = foreground, 2 = cursor
 
-    cpdef list get_screen_buffer(self)
+    cdef list get_screen_buffer(self)
     cdef void set_cursor(self, unsigned char character, float[4] color, unsigned char cursor_mode)
     cdef void backspace(self)
     cdef void place_character(self, unsigned char character)

@@ -22,8 +22,7 @@ def apple1_system():
 
 
 def test_keyboard_fifo_and_kbdcr_clear_on_read(apple1_system) -> None:
-    keyboard = apple1_system.inputs[0]
-    assert keyboard.add_character_to_kb_buffer(ord("X"))
+    assert apple1_system.send_key(ord("X"))
 
     assert apple1_system.peek(0xD011) == 0x80
     assert apple1_system.peek(0xD010) == (ord("X") | 0x80)

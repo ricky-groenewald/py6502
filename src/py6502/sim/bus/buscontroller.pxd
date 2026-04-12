@@ -27,20 +27,19 @@ cdef class BusController(Component):
     cdef EmptyAddress _empty_address
     cdef list _tick_hooks
 
-    cpdef void add_component(self, Component component, unsigned int address_start) except *
-    cpdef void register_tick_hook(self, object component)
+    cdef void add_component(self, Component component, unsigned int address_start) except *
+    cdef void register_tick_hook(self, object component)
 
-    cpdef void testme(self)
-    cpdef bint check_success(self)
+    cdef void clock(self) except *
+    cdef void run_cycles(self, unsigned long cycles) except *
+    cdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *
 
-    cpdef void clock(self) except *
-    cpdef void run_cycles(self, unsigned long cycles) except *
-    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *
+    cdef void send_reset(self)
 
-    cpdef void send_reset(self)
+    cdef Registers get_registers(self)
+    cdef void set_registers(self, Registers registers)
 
-    cpdef Registers get_registers(self)
-    cpdef void set_registers(self, Registers registers)
+    cdef bint is_mapped(self, unsigned short address)
+    cdef void set_unmapped_memory_mode(self, bint crash)
 
-    cpdef bint is_mapped(self, unsigned short address)
-    cpdef void set_unmapped_memory_mode(self, bint crash)
+    cdef tuple get_bus_values(self)

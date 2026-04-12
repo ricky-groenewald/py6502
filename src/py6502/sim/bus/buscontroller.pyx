@@ -50,7 +50,7 @@ cdef class BusController(Component):
                 Py_DECREF(<Component>self._component_address_map[i].component)
                 self._component_address_map[i].component = NULL
 
-    cpdef void add_component(self, Component component, unsigned int address_start) except *:
+    cdef void add_component(self, Component component, unsigned int address_start) except *:
         """
         Add a component to the controller
 
@@ -84,7 +84,7 @@ cdef class BusController(Component):
             Py_INCREF(component)
             Py_DECREF(self._empty_address) # NEED TO decrement ref count to empty address
 
-    cpdef void register_tick_hook(self, object component):
+    cdef void register_tick_hook(self, object component):
         """
         Subscribe a component to the batch-end tick hook. After every
         run_cycles(N) call, the component's on_cycles_elapsed(N) cdef
@@ -92,17 +92,10 @@ cdef class BusController(Component):
         """
         self._tick_hooks.append(component)
 
-    cpdef void testme(self):
-        for _ in range(96_247_419):
-            self._processor.clock()
-
-    cpdef bint check_success(self):
-        return self.read(0x0200) == 0xF0
-
-    cpdef void clock(self) except *:
+    cdef void clock(self) except *:
         self._processor.clock()
 
-    cpdef void run_cycles(self, unsigned long cycles) except *:
+    cdef void run_cycles(self, unsigned long cycles) except *:
         cdef Py_ssize_t hook_idx
         cdef Py_ssize_t hook_count
         for _ in range(cycles):
@@ -111,28 +104,28 @@ cdef class BusController(Component):
         for hook_idx in range(hook_count):
             (<Component>self._tick_hooks[hook_idx]).on_cycles_elapsed(cycles)
 
-    cpdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *:
+    cdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *:
         cdef unsigned long cycles = (microseconds * cpu_hz) // 1000000
         if cycles:
             self.run_cycles(cycles)
 
-    cpdef void send_reset(self):
+    cdef void send_reset(self):
         self._processor.send_reset()
 
-    cpdef Registers get_registers(self):
+    cdef Registers get_registers(self):
         return self._processor.get_registers()
 
-    cpdef void set_registers(self, Registers registers):
+    cdef void set_registers(self, Registers registers):
         self._processor.set_registers(registers)
 
-    cpdef bint is_mapped(self, unsigned short address):
+    cdef bint is_mapped(self, unsigned short address):
         return (<Component>self._component_address_map[address].component
                 is not self._empty_address)
 
-    cpdef void set_unmapped_memory_mode(self, bint crash):
+    cdef void set_unmapped_memory_mode(self, bint crash):
         self._empty_address._raise_on_unmapped = crash
 
-    def get_bus_values(self):
+    cdef tuple get_bus_values(self):
         return (
             self._current_bus_address,
             self._current_bus_data,

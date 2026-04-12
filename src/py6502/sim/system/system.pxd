@@ -26,6 +26,8 @@ cdef class System:
     cpdef bint is_mapped(self, unsigned short address)
     cpdef void set_invalid_opcode_mode(self, unsigned char mode)
     cpdef void set_unmapped_memory_mode(self, bint crash)
+    cpdef bint send_key(self, unsigned char char_)
+    cpdef void clear_input_buffer(self)
 
     cdef Component _instantiate_component(self, object spec)
     cdef void _wire_component(self, Component component, unsigned int address, str bus_name)

@@ -71,5 +71,5 @@ cdef class Apple1Display(Component):
         if self._busy_remaining > 0:
             self._busy_remaining -= <long>n
 
-    cpdef list get_framebuffer(self):
+    cdef list get_framebuffer(self):
         return self._text_display.get_screen_buffer()

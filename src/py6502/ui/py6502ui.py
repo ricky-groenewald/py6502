@@ -1,10 +1,10 @@
 # NOTE: This file is **reference material only**. It is the pre-restructure
 # monolithic UI, preserved as a feature-parity checklist while the new
 # Py6502App shell is being built out. It is not imported by the package
-# and does not need to stay runtime-correct — the imports and key call
-# sites below are updated to reflect the current architecture (split
-# Apple1 peripherals, Py6502App entry point) but the rest of the file
-# still wires the simulator by hand.
+# and does not run — the sim's Python API was reduced to System-only
+# (GH #37), so method calls on BusController, Memory, and peripheral
+# objects raise AttributeError. The imports still resolve; only the
+# method calls fail at runtime.
 import dearpygui.dearpygui as dpg
 from time import perf_counter, sleep
 from py6502.sim.peripherals import Apple1Display, Apple1Keyboard

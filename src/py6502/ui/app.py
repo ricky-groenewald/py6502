@@ -262,12 +262,8 @@ class Py6502App:
             self._update_memory_monitor()
 
     def _drain_keys_into_system(self) -> None:
-        if not self.system.inputs:
-            self._key_buffer.clear()
-            return
-        keyboard = self.system.inputs[0]
         while self._key_buffer:
-            if keyboard.add_character_to_kb_buffer(self._key_buffer[0]):
+            if self.system.send_key(self._key_buffer[0]):
                 self._key_buffer.pop(0)
             else:
                 break

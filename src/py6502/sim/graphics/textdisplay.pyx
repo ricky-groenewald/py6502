@@ -9,7 +9,7 @@ cdef class Font:
         if self.character_set:
             free(self.character_set)
 
-    cpdef void _create_character_set(self, char* filename) except *:
+    cdef void _create_character_set(self, char* filename) except *:
         cdef FILE* cfile = fopen(filename, "rb")
         if cfile == NULL:
             raise FileNotFoundError(f"File {filename} not found")
@@ -68,7 +68,7 @@ cdef class TextDisplay:
         if self._cursor_pixel_map:
             free(self._cursor_pixel_map)
 
-    cpdef list get_screen_buffer(self):
+    cdef list get_screen_buffer(self):
         if self._cursor_mode == 1:
             self._cursor_blink_timer += 1
             if self._cursor_blink_timer == 30:
