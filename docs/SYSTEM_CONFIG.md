@@ -546,8 +546,8 @@ id: apple_i_4k
 name: Apple I (4K)
 description: |
   The original Apple I from 1976: 1 MHz 6502, 4 KiB RAM, Apple I
-  cassette-interface I/O chip at $D010-$D013, and Steve Wozniak's
-  monitor program (wozmon) in ROM at $FF00-$FFFF.
+  interface I/O chip at $D010-$D013, and Steve Wozniak's monitor
+  program (wozmon) in ROM at $FF00-$FFFF.
 author: py6502
 tags: [apple, 1976, homebrew]
 

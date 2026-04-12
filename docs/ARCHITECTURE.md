@@ -74,7 +74,7 @@ src/py6502/
 │   │   └── textdisplay.pxd/.pyx   # Character-grid framebuffer + Font
 │   ├── peripherals/
 │   │   ├── apple1_display.pxd/.pyx  # DSP + DSPCR + NTSC-frame busy timer
-│   │   └── apple1_keyboard.pxd/.pyx # KBD + KBDCR + 8-byte LIFO buffer
+│   │   └── apple1_keyboard.pxd/.pyx # KBD + KBDCR + circular FIFO buffer
 │   └── system/
 │       ├── config.py              # Frozen dataclass representation
 │       ├── registry.py            # Type-name → class registry
@@ -132,7 +132,7 @@ cross-component references or a tick-hook subscription grab them here.
 per `BusController.run_cycles(N)` batch for every component that
 registered via `system.register_tick_hook(self)` — **not once per
 cycle**. See `Apple1Display` for the reference use: decrementing a
-DSPCR busy counter without touching the CPU hot path.
+DSP busy counter without touching the CPU hot path.
 
 Subclasses override `read` and `write` to implement their behavior:
 
@@ -255,7 +255,7 @@ Peripherals follow a small contract:
   keyboard-like devices.
 - **May** override `cdef void bind(self, object system)` to subscribe
   to cycle-accounting ticks via `system.register_tick_hook(self)`.
-  `Apple1Display` uses this to hold DSPCR busy for one full NTSC frame
+  `Apple1Display` uses this to hold DSP bit 7 busy for one full NTSC frame
   after a DSP write, without touching the CPU hot path.
 - **Must not** own their own clock loop. `System` is the single owner
   of the clock — peripherals only see tick-hook fan-out, never a Python
@@ -325,7 +325,7 @@ call executes thousands of 6502 cycles entirely in Cython.
 `BusController.run_cycles(N)` fans out a single
 `on_cycles_elapsed(N)` call per registered tick hook after the inner
 loop — **not** once per cycle — so components that need cycle-accurate
-timing (e.g. `Apple1Display`'s DSPCR busy bit) pay one C virtual call
+timing (e.g. `Apple1Display`'s DSP busy bit) pay one C virtual call
 per batch.
 
 ### v0.2: multi-bus with per-bus dividers

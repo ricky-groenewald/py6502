@@ -5,7 +5,7 @@ Register file (component-relative):
     offset 0 — DSP   ($D012 on the bus)
     offset 1 — DSPCR ($D013 on the bus)
 
-DSPCR bit 7 is the "display busy" flag. On real hardware it stays high
+DSP bit 7 is the "display busy" flag. On real hardware it stays high
 for approximately one NTSC frame (≈ 16667 cycles at 1 MHz) after a DSP
 write, which is what throttles wozmon's output to ~60 chars/second. We
 preserve that timing with a simple countdown that is serviced from the
@@ -23,8 +23,8 @@ cdef float[4] FG_COLOR = [0x66 / 255.0, 1.0, 0x66 / 255.0, 1.0]
 
 DEF DSP = 0x0000
 DEF DSPCR = 0x0001
-DEF DSPCR_BUSY = 0x80
-DEF DSPCR_BUSY_CYCLES = 16667  # 1 NTSC frame at 1 MHz
+DEF DSP_BUSY = 0x80
+DEF DSP_BUSY_CYCLES = 16667  # 1 NTSC frame at 1 MHz
 
 
 cdef class Apple1Display(Component):
@@ -47,8 +47,8 @@ cdef class Apple1Display(Component):
     @boundscheck(False)
     @wraparound(False)
     cdef unsigned char read(self, unsigned short address):
-        if address == DSPCR:
-            return DSPCR_BUSY if self._busy_remaining > 0 else 0x00
+        if address == DSP:
+            return DSP_BUSY if self._busy_remaining > 0 else 0x00
         return 0x00
 
     @boundscheck(False)
@@ -69,7 +69,7 @@ cdef class Apple1Display(Component):
             elif stripped >= 0x60:
                 # Apple 1 charset quirk: 0x60-0x7F render as 0x40-0x5F.
                 self._text_display.place_character(stripped - 0x20)
-            self._busy_remaining = DSPCR_BUSY_CYCLES
+            self._busy_remaining = DSP_BUSY_CYCLES
         return data
 
     cdef void on_cycles_elapsed(self, unsigned long n):

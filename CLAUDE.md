@@ -53,7 +53,10 @@ play/                  Scratch 6502 asm + binaries; not part of the package
 
 - **Git**: every feature lands via a PR from a feature branch into `dev`.
   Versioned releases PR `dev` → `main`. Never force-push `main` or `dev`.
-  See `docs/ROADMAP.md` §Git workflow.
+  See `docs/ROADMAP.md` §Git workflow. **Every commit and PR goes
+  through the `/commit` skill** — it enforces the protected-branch
+  gate, feature-branch naming, and commit-message shape. Never run
+  `git commit` or `gh pr create` out-of-band.
 - **Commit messages**: keep them as concise as the change allows — a
   single imperative headline is ideal; a short body is fine when the
   change spans multiple concerns and the *why* isn't obvious from the

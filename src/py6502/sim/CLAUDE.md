@@ -114,14 +114,14 @@ pure Cython and then fans out a single tick-hook call per registered
 component. A peripheral that needs cycle-level accuracy overrides
 `cdef void on_cycles_elapsed(self, unsigned long n)` and subscribes via
 `bind()` — see `Apple1Display` for the reference implementation of the
-DSPCR busy-timer.
+DSP busy-timer.
 
 ### Accuracy First
 
-Hardware timing is a contract. `Apple1Display`'s DSPCR stays busy for
-exactly one NTSC frame (`16667` cycles at 1 MHz) after a DSP write — not
-"some cycles", not "cleared at the next batch boundary". Test
-`test_dspcr_timing_via_system_run_cycles` locks this at batch
+Hardware timing is a contract. `Apple1Display`'s DSP bit 7 stays busy
+for exactly one NTSC frame (`16667` cycles at 1 MHz) after a DSP write —
+not "some cycles", not "cleared at the next batch boundary". Test
+`test_dsp_busy_timing_via_system_run_cycles` locks this at batch
 granularity so future refactors can't silently regress it. When you add
 a peripheral with hardware-observable timing, write the equivalent test
 up front and keep it cycle-exact.

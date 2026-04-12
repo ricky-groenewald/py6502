@@ -26,31 +26,33 @@ cdef class Apple1Keyboard(Component):
         self._kbd_buffer = <unsigned char*>malloc(KBD_BUFFER_SIZE * sizeof(unsigned char))
         if self._kbd_buffer is NULL:
             raise MemoryError(f'[{self.get_name()}] Failed to allocate keyboard buffer')
-        self._kbd_buffer_index = 0
+        self._kbd_buffer_current_index = KBD_BUFFER_SIZE - 1
+        self._kbd_buffer_last_index = 0
 
     def __dealloc__(self):
         if self._kbd_buffer is not NULL:
             free(self._kbd_buffer)
 
     cpdef bint add_character_to_kb_buffer(self, unsigned char char_):
-        if self._kbd_buffer_index < KBD_BUFFER_SIZE:
+        if self._kbd_buffer_current_index != self._kbd_buffer_last_index:
             # The Apple 1 keyboard controller expects bit 7 set on incoming chars.
-            self._kbd_buffer[self._kbd_buffer_index] = char_ | 0x80
-            self._kbd_buffer_index += 1
+            self._kbd_buffer[self._kbd_buffer_last_index] = char_ | 0x80
+            self._kbd_buffer_last_index = (self._kbd_buffer_last_index + 1) % KBD_BUFFER_SIZE
             return True
         return False
 
     cpdef void clear_kbd_buffer(self):
-        self._kbd_buffer_index = 0
+        self._kbd_buffer_current_index = KBD_BUFFER_SIZE - 1
+        self._kbd_buffer_last_index = 0
 
     @boundscheck(False)
     @wraparound(False)
     cdef unsigned char read(self, unsigned short address):
-        if address == KBDCR and self._kbd_buffer_index:
+        if address == KBDCR and self._kbd_buffer_last_index != (self._kbd_buffer_current_index + 1) % KBD_BUFFER_SIZE:
             return 0x80
-        if address == KBD and self._kbd_buffer_index:
-            self._kbd_buffer_index -= 1
-            return self._kbd_buffer[self._kbd_buffer_index]
+        if address == KBD and self._kbd_buffer_last_index != (self._kbd_buffer_current_index + 1) % KBD_BUFFER_SIZE:
+            self._kbd_buffer_current_index = (self._kbd_buffer_current_index + 1) % KBD_BUFFER_SIZE
+            return self._kbd_buffer[self._kbd_buffer_current_index]
         return 0x00
 
     @boundscheck(False)

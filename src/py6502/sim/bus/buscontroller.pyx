@@ -101,10 +101,9 @@ cdef class BusController(Component):
         self._processor.clock()
 
     cpdef void run_cycles(self, unsigned long cycles):
-        cdef unsigned long i
         cdef Py_ssize_t hook_idx
         cdef Py_ssize_t hook_count
-        for i in range(cycles):
+        for _ in range(cycles):
             self._processor.clock()
         hook_count = len(self._tick_hooks)
         for hook_idx in range(hook_count):
