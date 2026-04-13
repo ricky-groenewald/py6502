@@ -83,11 +83,9 @@ src/py6502/
 └── ui/                            # DearPyGui frontend (pure Python)
     ├── __init__.py
     ├── app.py                     # Py6502App — menu bar, per-frame loop
-    ├── themes.py                  # DearPyGui theme factories
-    ├── systems/                   # Per-system config UI metadata
-    ├── utils/                     # Opcode maps, formatters
-    ├── windows/                   # Modal + persistent windows
-    └── py6502ui.py                # Legacy monolith (feature reference)
+    ├── themes.py                  # ThemeManager — DearPyGui theme factories
+    ├── utils/                     # Key handler, settings, preset discovery
+    └── windows/                   # Video, debug, system selector, etc.
 ```
 
 ---
@@ -413,19 +411,9 @@ never O(cycles).**
 The system-selector modal — a presets browser that reads
 `py6502.sim.assets.presets/*.yaml`, lets the user pick one (and
 eventually tweak its preset options via per-system configurators under
-`py6502/ui/systems/`), and hands the resulting `SystemConfig` to
-`Py6502App` — is v0.1 scope but lands after the abstractions + IaC PR.
-Until then, `Py6502App` loads `apple1.yaml` directly.
-
-### 5.3 Legacy `py6502ui.py`
-
-A monolithic module from the pre-`System` era. It's retained as a
-**feature reference** for what the new shell needs to reach parity on:
-hex + ASCII memory monitor, disassembly view, register panel, binary
-loader, Run/Stop/Step/Reset controls, and video output. The new shell
-does not have to match its implementation — only its feature set. The
-legacy file is not re-exported from `py6502.ui` and will be deleted once
-the new shell is at parity.
+The system selector modal auto-discovers preset YAMLs from bundled
+assets and supports user-loaded YAML configs. Settings are persisted to
+`py6502_settings.json` alongside the DearPyGui layout file.
 
 ---
 
