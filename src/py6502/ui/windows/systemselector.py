@@ -23,23 +23,18 @@ LEFT_PANE_TAG = "SystemSelectorLeftPane"
 PRESET_GROUP_TAG = "SystemSelectorPresetGroup"
 USER_GROUP_TAG = "SystemSelectorUserGroup"
 RIGHT_PANE_TAG = "SystemSelectorRightPane"
+INFO_PANE_TAG = "SystemSelectorInfoPane"
 FILE_DIALOG_TAG = "SystemSelectorFileDialog"
 
-# Info pane (shown for presets / user configs)
-INFO_PANE_TAG = "SystemSelectorInfoPane"
-
-# Custom system form tags
 CUSTOM_FORM_TAG = "CustomSystemForm"
 CUSTOM_NAME_TAG = "CustomSystemName"
 CUSTOM_CPU_HZ_TAG = "CustomSystemCpuHz"
-CUSTOM_REGIONS_GROUP_TAG = "CustomSystemRegionsGroup"
+CUSTOM_REGIONS_TAG = "CustomSystemRegionsGroup"
 CUSTOM_DISPLAY_TAG = "CustomSystemDisplay"
 CUSTOM_DISPLAY_ADDR_TAG = "CustomSystemDisplayAddr"
 CUSTOM_INPUT_TAG = "CustomSystemInput"
 CUSTOM_INPUT_ADDR_TAG = "CustomSystemInputAddr"
 CUSTOM_STATUS_TAG = "CustomSystemStatus"
-
-# File dialogs
 SOURCE_FILE_DIALOG_TAG = "CustomSystemSourceFileDialog"
 
 
@@ -49,61 +44,46 @@ class SystemSelectorWindow:
         self._entries: list[dict] = []
         self._selected_path: str | None = None
         self._selected_is_custom = False
-        # Dynamic memory region tracking for the custom builder
         self._region_counter = 0
         self._region_ids: list[int] = []
-        # Which region's source file dialog is active
         self._source_dialog_target: int | None = None
 
     def build(self) -> None:
         with dpg.window(
             label="New System",
-            width=820,
-            height=520,
-            show=False,
-            modal=True,
-            no_resize=True,
+            width=820, height=520,
+            show=False, modal=True, no_resize=True,
             tag=WINDOW_TAG,
         ):
             with dpg.group(horizontal=True):
-                # --- Left pane: system list ---
                 with dpg.child_window(width=280, height=440, tag=LEFT_PANE_TAG):
                     dpg.add_text("Presets", color=(255, 255, 0))
                     dpg.add_group(tag=PRESET_GROUP_TAG)
-
                     dpg.add_separator()
                     dpg.add_text("User Configs", color=(255, 255, 0))
                     dpg.add_group(tag=USER_GROUP_TAG)
-                    dpg.add_button(
-                        label="Load from file...", callback=self._on_browse,
-                    )
-
+                    dpg.add_button(label="Load from file...", callback=self._on_browse)
                     dpg.add_separator()
                     dpg.add_text("Custom", color=(255, 255, 0))
                     self._build_custom_card()
 
-                # --- Right pane: info / config ---
                 with dpg.child_window(width=-1, height=440, tag=RIGHT_PANE_TAG):
                     with dpg.group(tag=INFO_PANE_TAG, show=True):
                         dpg.add_text("Select a system from the left panel.")
-
                     self._build_custom_form()
 
-            # --- Bottom buttons ---
             with dpg.group(horizontal=True):
                 dpg.add_button(label="Launch", width=120, callback=self._on_launch)
                 dpg.add_button(label="Cancel", width=120, callback=self._on_cancel)
 
-        # File dialog for user YAML configs
         with dpg.file_dialog(
             directory_selector=False, show=False,
-            callback=self._on_file_selected, tag=FILE_DIALOG_TAG,
+            callback=self._on_yaml_file_selected, tag=FILE_DIALOG_TAG,
             width=700, height=400,
         ):
             dpg.add_file_extension(".yaml", color=(0, 255, 0, 255))
             dpg.add_file_extension(".yml", color=(0, 255, 0, 255))
 
-        # File dialog for region source binaries
         with dpg.file_dialog(
             directory_selector=False, show=False,
             callback=self._on_source_file_selected, tag=SOURCE_FILE_DIALOG_TAG,
@@ -116,9 +96,8 @@ class SystemSelectorWindow:
     def _build_custom_card(self) -> None:
         card_theme = self._app.themes.card_button
         btn = dpg.add_button(
-            label="Custom 6502 System",
-            width=-1,
-            callback=lambda: self._on_select_custom(),
+            label="Custom 6502 System", width=-1,
+            callback=lambda s, a, u: self._on_select_custom(),
             parent=LEFT_PANE_TAG,
         )
         dpg.bind_item_theme(btn, card_theme)
@@ -130,10 +109,7 @@ class SystemSelectorWindow:
 
             with dpg.group(horizontal=True):
                 dpg.add_text("System Name:")
-                dpg.add_input_text(
-                    tag=CUSTOM_NAME_TAG, default_value="My System", width=250,
-                )
-
+                dpg.add_input_text(tag=CUSTOM_NAME_TAG, default_value="My System", width=250)
             with dpg.group(horizontal=True):
                 dpg.add_text("CPU Frequency (Hz):")
                 dpg.add_input_int(
@@ -142,16 +118,15 @@ class SystemSelectorWindow:
                 )
 
             dpg.add_separator()
-
-            # --- Memory regions (dynamic) ---
             with dpg.group(horizontal=True):
                 dpg.add_text("Memory Regions", color=(200, 200, 100))
-                dpg.add_button(label="+ Add Region", callback=self._add_region)
-            dpg.add_group(tag=CUSTOM_REGIONS_GROUP_TAG)
+                dpg.add_button(
+                    label="+ Add Region",
+                    callback=lambda s, a, u: self._add_region(),
+                )
+            dpg.add_group(tag=CUSTOM_REGIONS_TAG)
 
             dpg.add_separator()
-
-            # --- Peripherals ---
             dpg.add_text("Peripherals", color=(200, 200, 100))
             with dpg.group(horizontal=True):
                 dpg.add_text("Display:")
@@ -182,47 +157,36 @@ class SystemSelectorWindow:
             dpg.add_text("", tag=CUSTOM_STATUS_TAG)
 
     # ------------------------------------------------------------------
-    # Dynamic memory region management
+    # Dynamic memory regions
     # ------------------------------------------------------------------
     def _add_region(
-        self,
-        name: str = "",
-        start: str = "0000",
-        size: str = "1000",
-        read_only: bool = False,
-        source: str = "",
+        self, name: str = "", start: str = "0000",
+        size: str = "1000", read_only: bool = False,
     ) -> None:
         rid = self._region_counter
         self._region_counter += 1
         self._region_ids.append(rid)
 
-        group_tag = f"CustomRegion_{rid}"
-        name_tag = f"CustomRegionName_{rid}"
-        start_tag = f"CustomRegionStart_{rid}"
-        size_tag = f"CustomRegionSize_{rid}"
-        ro_tag = f"CustomRegionRO_{rid}"
-        source_tag = f"CustomRegionSource_{rid}"
-
-        with dpg.group(
-            tag=group_tag, parent=CUSTOM_REGIONS_GROUP_TAG,
-        ):
+        with dpg.group(tag=f"CustomRegion_{rid}", parent=CUSTOM_REGIONS_TAG):
             with dpg.group(horizontal=True):
                 dpg.add_input_text(
-                    tag=name_tag, default_value=name or f"Region{rid}",
-                    width=90, hint="Name",
+                    tag=f"RegionName_{rid}",
+                    default_value=name or f"Region{rid}",
+                    width=80, hint="Name",
                 )
                 dpg.add_text("0x")
                 dpg.add_input_text(
-                    tag=start_tag, default_value=start, width=45,
-                    uppercase=True, hexadecimal=True, no_spaces=True,
+                    tag=f"RegionStart_{rid}", default_value=start,
+                    width=45, uppercase=True, hexadecimal=True, no_spaces=True,
                 )
                 dpg.add_text("Size: 0x")
                 dpg.add_input_text(
-                    tag=size_tag, default_value=size, width=45,
-                    uppercase=True, hexadecimal=True, no_spaces=True,
+                    tag=f"RegionSize_{rid}", default_value=size,
+                    width=45, uppercase=True, hexadecimal=True, no_spaces=True,
                 )
                 dpg.add_checkbox(
-                    tag=ro_tag, label="ROM", default_value=read_only,
+                    tag=f"RegionRO_{rid}", label="ROM",
+                    default_value=read_only,
                 )
                 dpg.add_button(
                     label="X", width=24,
@@ -232,8 +196,8 @@ class SystemSelectorWindow:
             with dpg.group(horizontal=True):
                 dpg.add_text("  Source:")
                 dpg.add_input_text(
-                    tag=source_tag, default_value=source,
-                    readonly=True, width=280, hint="(optional binary)",
+                    tag=f"RegionSource_{rid}", readonly=True,
+                    width=260, hint="(optional binary)",
                 )
                 dpg.add_button(
                     label="Browse...",
@@ -242,9 +206,7 @@ class SystemSelectorWindow:
                 )
                 dpg.add_button(
                     label="Clear",
-                    callback=lambda s, a, u: dpg.set_value(
-                        f"CustomRegionSource_{u}", "",
-                    ),
+                    callback=lambda s, a, u: dpg.set_value(f"RegionSource_{u}", ""),
                     user_data=rid,
                 )
 
@@ -257,23 +219,16 @@ class SystemSelectorWindow:
         self._source_dialog_target = rid
         dpg.show_item(SOURCE_FILE_DIALOG_TAG)
 
-    def _on_source_file_selected(
-        self, sender: int, app_data: dict, user_data: object,
-    ) -> None:
+    def _on_source_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
         file_path = app_data.get("file_path_name", "")
         if file_path and self._source_dialog_target is not None:
-            dpg.set_value(
-                f"CustomRegionSource_{self._source_dialog_target}", file_path,
-            )
+            dpg.set_value(f"RegionSource_{self._source_dialog_target}", file_path)
 
     def _reset_custom_form(self) -> None:
-        """Clear dynamic regions and add one default RAM region."""
-        # Remove all existing region widgets
         for rid in list(self._region_ids):
             self._remove_region(rid)
         self._region_ids.clear()
         self._region_counter = 0
-        # Add a default RAM region
         self._add_region(name="RAM", start="0000", size="1000")
 
     # ------------------------------------------------------------------
@@ -291,12 +246,10 @@ class SystemSelectorWindow:
         for tag in (PRESET_GROUP_TAG, USER_GROUP_TAG):
             dpg.delete_item(tag, children_only=True)
 
-        # Presets (name only in left pane, details in right pane)
         for meta in discover_presets():
             self._entries.append(meta)
             self._add_entry_row(meta, PRESET_GROUP_TAG, removable=False)
 
-        # User configs
         valid_paths: list[str] = []
         for path in self._app.settings.user_config_paths:
             meta = load_user_config_metadata(path)
@@ -306,16 +259,12 @@ class SystemSelectorWindow:
                 valid_paths.append(path)
         self._app.settings.user_config_paths = valid_paths
 
-        # Auto-select first entry
         if self._entries:
             self._on_select(self._entries[0]["path"])
 
-    def _add_entry_row(
-        self, meta: dict, parent_tag: str, *, removable: bool,
-    ) -> None:
+    def _add_entry_row(self, meta: dict, parent_tag: str, *, removable: bool) -> None:
         card_theme = self._app.themes.card_button
         path = meta["path"]
-
         with dpg.group(horizontal=True, parent=parent_tag):
             btn = dpg.add_button(
                 label=meta["name"],
@@ -332,38 +281,26 @@ class SystemSelectorWindow:
                 )
 
     # ------------------------------------------------------------------
-    # Selection handlers
+    # Selection
     # ------------------------------------------------------------------
     def _on_select(self, path: str) -> None:
         self._selected_path = path
         self._selected_is_custom = False
         dpg.configure_item(INFO_PANE_TAG, show=True)
         dpg.configure_item(CUSTOM_FORM_TAG, show=False)
-        # Populate right pane with system metadata
         dpg.delete_item(INFO_PANE_TAG, children_only=True)
         meta = next((e for e in self._entries if e["path"] == path), None)
         if meta:
-            dpg.add_text(
-                meta["name"], parent=INFO_PANE_TAG, color=(100, 200, 255),
-            )
+            dpg.add_text(meta["name"], parent=INFO_PANE_TAG, color=(100, 200, 255))
             dpg.add_separator(parent=INFO_PANE_TAG)
             if meta["description"]:
-                dpg.add_text(
-                    meta["description"].strip(),
-                    parent=INFO_PANE_TAG, wrap=480,
-                )
+                dpg.add_text(meta["description"].strip(), parent=INFO_PANE_TAG, wrap=480)
             if meta["author"]:
                 dpg.add_spacer(parent=INFO_PANE_TAG, height=8)
-                dpg.add_text(
-                    f"Author: {meta['author']}", parent=INFO_PANE_TAG,
-                    color=(180, 180, 180),
-                )
+                dpg.add_text(f"Author: {meta['author']}", parent=INFO_PANE_TAG, color=(180, 180, 180))
             if meta["tags"]:
                 tags_str = ", ".join(str(t) for t in meta["tags"])
-                dpg.add_text(
-                    f"Tags: {tags_str}", parent=INFO_PANE_TAG,
-                    color=(180, 180, 180),
-                )
+                dpg.add_text(f"Tags: {tags_str}", parent=INFO_PANE_TAG, color=(180, 180, 180))
 
     def _on_select_custom(self) -> None:
         self._selected_path = None
@@ -390,71 +327,31 @@ class SystemSelectorWindow:
             self._app._load_system(self._selected_path)
 
     def _launch_custom(self) -> None:
-        """Build a SystemConfig from the dynamic form and launch it."""
         name = dpg.get_value(CUSTOM_NAME_TAG) or "Custom System"
         cpu_hz = dpg.get_value(CUSTOM_CPU_HZ_TAG)
 
-        # Collect memory regions
-        memory: list[MemoryRegion] = []
-        for rid in self._region_ids:
-            r_name = dpg.get_value(f"CustomRegionName_{rid}").strip()
-            if not r_name:
-                self._set_status(f"Region {rid} has no name", error=True)
-                return
-            try:
-                r_start = int(dpg.get_value(f"CustomRegionStart_{rid}"), 16)
-                r_size = int(dpg.get_value(f"CustomRegionSize_{rid}"), 16)
-            except ValueError:
-                self._set_status(
-                    f"Invalid hex in region '{r_name}'", error=True,
-                )
-                return
-            if r_size == 0:
-                self._set_status(
-                    f"Region '{r_name}' has zero size", error=True,
-                )
-                return
-            r_ro = dpg.get_value(f"CustomRegionRO_{rid}")
-            r_source_path = dpg.get_value(f"CustomRegionSource_{rid}").strip()
-            source = f"file:{r_source_path}" if r_source_path else None
-            memory.append(MemoryRegion(
-                name=r_name, start=r_start, size=r_size,
-                read_only=r_ro, source=source,
-            ))
-
+        memory = self._collect_regions()
+        if memory is None:
+            return
         if not memory:
             self._set_status("Add at least one memory region", error=True)
             return
 
-        # Display
-        display = None
-        display_type = dpg.get_value(CUSTOM_DISPLAY_TAG)
-        if display_type != "None":
-            try:
-                display_addr = int(dpg.get_value(CUSTOM_DISPLAY_ADDR_TAG), 16)
-            except ValueError:
-                self._set_status("Invalid display address", error=True)
-                return
-            display = ComponentSpec(type=display_type, address=display_addr)
+        display = self._collect_display()
+        if display is False:
+            return
 
-        # Inputs
-        inputs: list[ComponentSpec] = []
-        input_type = dpg.get_value(CUSTOM_INPUT_TAG)
-        if input_type != "None":
-            try:
-                input_addr = int(dpg.get_value(CUSTOM_INPUT_ADDR_TAG), 16)
-            except ValueError:
-                self._set_status("Invalid input address", error=True)
-                return
-            inputs.append(ComponentSpec(type=input_type, address=input_addr))
+        inputs = self._collect_inputs()
+        if inputs is False:
+            return
 
         config = SystemConfig(
             version=1, id="custom", name=name,
             description="Custom system configuration",
             cpu=CpuSpec(type="MOS6502", hz=cpu_hz),
             memory=tuple(memory),
-            display=display,
-            inputs=tuple(inputs),
+            display=display if display else None,
+            inputs=tuple(inputs) if inputs else (),
         )
 
         try:
@@ -466,13 +363,59 @@ class SystemSelectorWindow:
         dpg.hide_item(WINDOW_TAG)
         self._app._load_system_from_instance(system, name)
 
+    def _collect_regions(self) -> list[MemoryRegion] | None:
+        regions: list[MemoryRegion] = []
+        for rid in self._region_ids:
+            r_name = dpg.get_value(f"RegionName_{rid}").strip()
+            if not r_name:
+                self._set_status("A memory region has no name", error=True)
+                return None
+            try:
+                r_start = int(dpg.get_value(f"RegionStart_{rid}"), 16)
+                r_size = int(dpg.get_value(f"RegionSize_{rid}"), 16)
+            except ValueError:
+                self._set_status(f"Invalid hex in region '{r_name}'", error=True)
+                return None
+            if r_size == 0:
+                self._set_status(f"Region '{r_name}' has zero size", error=True)
+                return None
+            r_ro = dpg.get_value(f"RegionRO_{rid}")
+            r_source = dpg.get_value(f"RegionSource_{rid}").strip()
+            source = f"file:{r_source}" if r_source else None
+            regions.append(MemoryRegion(
+                name=r_name, start=r_start, size=r_size,
+                read_only=r_ro, source=source,
+            ))
+        return regions
+
+    def _collect_display(self) -> ComponentSpec | None | bool:
+        display_type = dpg.get_value(CUSTOM_DISPLAY_TAG)
+        if display_type == "None":
+            return None
+        try:
+            addr = int(dpg.get_value(CUSTOM_DISPLAY_ADDR_TAG), 16)
+        except ValueError:
+            self._set_status("Invalid display address", error=True)
+            return False
+        return ComponentSpec(type=display_type, address=addr)
+
+    def _collect_inputs(self) -> list[ComponentSpec] | bool:
+        input_type = dpg.get_value(CUSTOM_INPUT_TAG)
+        if input_type == "None":
+            return []
+        try:
+            addr = int(dpg.get_value(CUSTOM_INPUT_ADDR_TAG), 16)
+        except ValueError:
+            self._set_status("Invalid input address", error=True)
+            return False
+        return [ComponentSpec(type=input_type, address=addr)]
+
     def _set_status(self, text: str, *, error: bool = False) -> None:
         dpg.set_value(CUSTOM_STATUS_TAG, text)
-        color = (255, 80, 80) if error else (80, 255, 80)
-        dpg.configure_item(CUSTOM_STATUS_TAG, color=color)
+        dpg.configure_item(CUSTOM_STATUS_TAG, color=(255, 80, 80) if error else (80, 255, 80))
 
     # ------------------------------------------------------------------
-    # File dialog callbacks
+    # File dialogs
     # ------------------------------------------------------------------
     def _on_cancel(self) -> None:
         dpg.hide_item(WINDOW_TAG)
@@ -480,9 +423,7 @@ class SystemSelectorWindow:
     def _on_browse(self) -> None:
         dpg.show_item(FILE_DIALOG_TAG)
 
-    def _on_file_selected(
-        self, sender: int, app_data: dict, user_data: object,
-    ) -> None:
+    def _on_yaml_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
         file_path = app_data.get("file_path_name", "")
         if not file_path:
             return
