@@ -22,29 +22,32 @@ Entry point: `src/py6502/__main__.py` → `Py6502App().run()`.
 ```
 app.py           Py6502App — viewport, menu bar, per-frame loop
 windows/         DearPyGui modals and panels
-├── systemselector.py   "New System" modal, driven by systems/config.py
-systems/         Per-preset configurators
-├── config.py           AVAILABLE_CONFIGS registry
-├── apple1.py           Apple I configurator
-└── custom6502.py       Custom 6502 configurator
-utils/           Small helpers (instructionmaps, …)
-themes.py        DearPyGui theme factories
-py6502ui.py      LEGACY monolithic UI — retained as a parity reference
+├── video.py              Video output window + texture management
+├── debug.py              Debug panel (controls, registers, memory monitor)
+├── systemselector.py     System selection modal (presets + user YAMLs)
+├── binaryloader.py       Binary load dialog (region + offset)
+├── settings.py           Settings window
+└── about.py              Custom About dialog
+utils/           Small helpers
+├── keyhandler.py         Keyboard input handler
+├── instructionmaps.py    Opcode lookup tables
+├── presets.py            Preset YAML discovery
+└── settings.py           Settings persistence (JSON)
+themes.py        ThemeManager — DearPyGui theme factories
 ```
 
 ## How a frame works
 
 ```python
 while dpg.is_dearpygui_running():
-    if self.emulator:
-        self.emulator.on_update()   # one call to the sim
+    if self.system is not None:
+        if self._sim_running:
+            self._drain_keys_into_system()
+            self.system.run_for_microseconds(FRAME_MICROSECONDS)
+            self._video.update_framebuffer(self.system.get_framebuffer())
+        self._debug.refresh(self.system)
     dpg.render_dearpygui_frame()
 ```
-
-`on_update` calls exactly one of `System.run_cycles(n)` or
-`System.run_for_microseconds(µs)`, then reads back `get_framebuffer()` and
-`get_registers()` to update the panels. Everything else about the frame
-loop is DearPyGui's problem.
 
 This is the one invariant the frontend has to protect: **one coarse call
 to the sim per UI frame**. Anything that loops over CPU cycles from here
@@ -52,30 +55,15 @@ is a bug, regardless of whether the tests pass.
 
 ## New System flow
 
-1. User opens **File → New System** from the menu bar.
-2. `SystemSelector` modal lists the entries in
-   `systems/config.py::AVAILABLE_CONFIGS` as cards (currently `APPLE_I`
-   and `CUSTOM_6502`).
-3. The user picks one; the matching configurator from `systems/<name>.py`
-   presents per-preset knobs (memory size, ROM path, …).
-4. The configurator produces a `SystemConfig` dataclass (see
-   [`docs/SYSTEM_CONFIG.md`](../../../docs/SYSTEM_CONFIG.md)).
-5. `Py6502App` hands that config to `System(config)` and attaches the
-   resulting instance as `self.emulator`.
+1. On startup the **System Selector** modal appears (unless "Start with
+   last used system" is enabled in settings and a previous system is
+   available).
+2. The selector auto-discovers preset YAMLs from
+   `py6502.sim.assets.presets/` and shows any previously loaded user
+   configs from `py6502_settings.json`.
+3. The user picks a preset or browses for a custom YAML file.
+4. `Py6502App._load_system(yaml_path)` calls `System.from_yaml_file`,
+   wires the resulting instance into the UI, and persists the choice.
 
-Adding a new machine is a new preset YAML + a new configurator file —
+Adding a new machine is a new preset YAML in the assets directory —
 **not** a new branch inside `app.py`.
-
-## Legacy UI
-
-`py6502ui.py` is the pre-restructure monolithic frontend. It wires up
-`BusController` + `RAM` + `ROM` + `Apple1` directly and hosts the full
-set of panels the old version shipped with: disassembly, register view,
-memory monitor, binary loader.
-
-It lives on as a **feature-parity reference**. New features go into the
-`Py6502App` tree, not into `py6502ui.py`. Once `Py6502App` has caught up
-on every panel, the legacy file is deleted in a single v0.1 commit.
-
-Do not import from it. Do not port code out of it; rebuild the panel on
-top of `System`'s public API instead.
