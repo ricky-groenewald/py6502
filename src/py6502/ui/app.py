@@ -3,6 +3,7 @@ Py6502App — DearPyGui shell that boots a configurable System preset and
 renders video + debug panels at 60 Hz. See GH #8 for v0.1 UI scope.
 """
 from pathlib import Path
+from time import perf_counter
 
 import dearpygui.dearpygui as dpg
 
@@ -12,6 +13,7 @@ from py6502.sim.system import System
 from py6502.ui.themes import ThemeManager
 from py6502.ui.utils.keyhandler import KeyHandler
 from py6502.ui.utils.settings import AppSettings, load_settings, save_settings
+from py6502.ui.windows.about import AboutWindow
 from py6502.ui.windows.binaryloader import BinaryLoaderWindow
 from py6502.ui.windows.debug import DebugWindow
 from py6502.ui.windows.settings import SettingsWindow
@@ -60,6 +62,9 @@ class Py6502App:
         self._binary_loader = BinaryLoaderWindow(self)
         self._binary_loader.build()
 
+        self._about = AboutWindow()
+        self._about.build()
+
         self._key_handler = KeyHandler(self._video, self._key_buffer)
         self._key_handler.build()
 
@@ -85,7 +90,7 @@ class Py6502App:
                 dpg.add_separator(tag="FileMenuSeparator2")
                 dpg.add_menu_item(label="Exit", tag="ExitMenuItem", callback=dpg.stop_dearpygui)
             with dpg.menu(label="Help"):
-                dpg.add_menu_item(label="About", callback=lambda: dpg.show_tool(dpg.mvTool_About))
+                dpg.add_menu_item(label="About", callback=self._show_about)
 
     def _startup_load(self) -> None:
         """Decide what to load on launch based on settings."""
@@ -125,6 +130,8 @@ class Py6502App:
     # Per-frame loop
     # ------------------------------------------------------------------
     def run(self) -> None:
+        frame_count = 0
+        fps_timer = perf_counter()
         while dpg.is_dearpygui_running():
             if self.system is not None:
                 if self._sim_running:
@@ -136,6 +143,13 @@ class Py6502App:
                     self._video.update_framebuffer(self.system.get_framebuffer())
                 self._debug.refresh(self.system)
             dpg.render_dearpygui_frame()
+            frame_count += 1
+            now = perf_counter()
+            if now - fps_timer >= 2.0:
+                fps = frame_count / (now - fps_timer)
+                dpg.set_viewport_title(f"Py6502 - {fps:.0f} FPS")
+                frame_count = 0
+                fps_timer = now
         dpg.destroy_context()
 
     def _drain_keys_into_system(self) -> None:
@@ -155,6 +169,9 @@ class Py6502App:
     # ------------------------------------------------------------------
     def _show_system_selector(self) -> None:
         self._system_selector.show()
+
+    def _show_about(self) -> None:
+        self._about.show()
 
     def _show_binary_loader(self) -> None:
         self._binary_loader.show()
