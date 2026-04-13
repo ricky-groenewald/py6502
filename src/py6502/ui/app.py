@@ -1,9 +1,8 @@
 """
-Py6502App — minimal DearPyGui shell that boots the Apple I preset into
-wozmon. v0.1 scope: one texture, one key handler, one per-frame call
-into System, plus two debug panels (registers + memory monitor) ported
-from the legacy py6502ui.py so the sim is actually inspectable while
-wozmon boots. System selector, disassembly, and binary loader land
+Py6502App — DearPyGui shell that boots a configurable System preset and
+renders video + debug panels at 60 Hz. v0.1 scope: one texture, one key
+handler, one per-frame call into System, plus debug panels (registers +
+memory monitor). System selector, disassembly, and binary loader land
 later (see GH #8).
 """
 from importlib import resources
@@ -14,13 +13,11 @@ from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 import InvalidOPCode
 from py6502.sim.system import System
 from py6502.ui.utils.instructionmaps import INSTRUCTION_MAP_6502
+from py6502.ui.utils.keyhandler import KeyHandler
+from py6502.ui.windows.video import VideoWindow
 
 
 FRAME_MICROSECONDS = 16667
-TEXTURE_WIDTH = 256
-TEXTURE_HEIGHT = 240
-TEXTURE_TAG = "output_texture"
-VIDEO_WINDOW_TAG = "VideoOutputWindow"
 DEBUG_WINDOW_TAG = "DebugWindow"
 DEBUG_WINDOW_WIDTH = 480
 
@@ -45,8 +42,8 @@ class Py6502App:
         self.context = dpg.create_context()
         self.viewport = dpg.create_viewport(
             title="Py6502",
-            width=TEXTURE_WIDTH * 3 + DEBUG_WINDOW_WIDTH + 48,
-            height=TEXTURE_HEIGHT * 3 + 80,
+            width=VideoWindow.TEXTURE_WIDTH * 3 + DEBUG_WINDOW_WIDTH + 48,
+            height=VideoWindow.TEXTURE_HEIGHT * 3 + 80,
         )
         dpg.setup_dearpygui()
         dpg.configure_app(init_file="./py6502ui.ini")
@@ -59,14 +56,17 @@ class Py6502App:
         self._sim_running = True
         self._sim_error: str | None = None
 
-        self._build_texture_registry()
+        self._video = VideoWindow(self)
+        self._video.build_texture_registry()
         self._build_menu_bar()
-        self._build_video_window()
+        self._video.build()
         self._build_debug_window()
-        self._build_key_handler()
+
+        self._key_handler = KeyHandler(self._video, self._key_buffer)
+        self._key_handler.build()
 
         dpg.show_viewport()
-        dpg.set_primary_window(VIDEO_WINDOW_TAG, True)
+        dpg.set_primary_window(VideoWindow.VIDEO_WINDOW_TAG, True)
 
         self._load_default_system()
         self._refresh_debug_panels()
@@ -74,11 +74,6 @@ class Py6502App:
     # ------------------------------------------------------------------
     # Build helpers
     # ------------------------------------------------------------------
-    def _build_texture_registry(self) -> None:
-        initial = [0.0] * (TEXTURE_WIDTH * TEXTURE_HEIGHT * 4)
-        with dpg.texture_registry(show=False):
-            dpg.add_dynamic_texture(TEXTURE_WIDTH, TEXTURE_HEIGHT, initial, tag=TEXTURE_TAG)
-
     def _build_menu_bar(self) -> None:
         with dpg.viewport_menu_bar():
             with dpg.menu(label="File", tag="FileMenu"):
@@ -103,29 +98,13 @@ class Py6502App:
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(label="About", callback=lambda: dpg.show_tool(dpg.mvTool_About))
 
-    def _build_video_window(self) -> None:
-        with dpg.window(
-            label="Video Output",
-            width=TEXTURE_WIDTH * 3 + 16,
-            height=TEXTURE_HEIGHT * 3 + 16,
-            no_resize=True,
-            no_close=True,
-            no_title_bar=True,
-            tag=VIDEO_WINDOW_TAG,
-        ):
-            dpg.draw_image(
-                TEXTURE_TAG,
-                (0, 20),
-                (TEXTURE_WIDTH * 3, TEXTURE_HEIGHT * 3 + 1),
-            )
-
     def _build_debug_window(self) -> None:
         with dpg.window(
             label="Debug",
             width=DEBUG_WINDOW_WIDTH,
-            height=TEXTURE_HEIGHT * 3 + 40,
+            height=VideoWindow.TEXTURE_HEIGHT * 3 + 40,
             no_close=True,
-            pos=(TEXTURE_WIDTH * 3 + 24, 20),
+            pos=(VideoWindow.TEXTURE_WIDTH * 3 + 24, 20),
             tag=DEBUG_WINDOW_TAG,
         ):
             with dpg.group(horizontal=True):
@@ -176,10 +155,6 @@ class Py6502App:
                 dpg.add_text("00 ~ 0xFFxx")
             dpg.add_text("", tag="mem_monitor")
 
-    def _build_key_handler(self) -> None:
-        with dpg.handler_registry():
-            dpg.add_key_press_handler(key=dpg.mvKey_None, callback=self._on_key_press)
-
     def _load_default_system(self) -> None:
         preset = resources.files("py6502.sim.assets").joinpath("presets/apple1.yaml")
         self.system = System.from_yaml_file(preset)
@@ -196,7 +171,7 @@ class Py6502App:
                         self.system.run_for_microseconds(FRAME_MICROSECONDS)
                     except (InvalidOPCode, UnallocatedAddressError) as exc:
                         self._on_sim_error(exc)
-                    dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
+                    self._video.update_framebuffer(self.system.get_framebuffer())
                 self._refresh_debug_panels()
             dpg.render_dearpygui_frame()
         dpg.destroy_context()
@@ -291,7 +266,7 @@ class Py6502App:
         self._sim_running = True
         dpg.configure_item("play_button", enabled=False)
         dpg.configure_item("pause_button", enabled=True)
-        dpg.focus_item(VIDEO_WINDOW_TAG)
+        dpg.focus_item(VideoWindow.VIDEO_WINDOW_TAG)
 
     def _pause_handler(self) -> None:
         self._sim_running = False
@@ -308,73 +283,12 @@ class Py6502App:
         dpg.configure_item("play_button", enabled=True)
         dpg.configure_item("pause_button", enabled=True)
         self._play_handler()
-        dpg.set_value(TEXTURE_TAG, self.system.get_framebuffer())
+        self._video.update_framebuffer(self.system.get_framebuffer())
         self._refresh_debug_panels()
-        dpg.focus_item(VIDEO_WINDOW_TAG)
+        dpg.focus_item(VideoWindow.VIDEO_WINDOW_TAG)
 
     def _reset_system(self) -> None:
-        # Menu-bar entry; forwards to the main reset handler.
         self._reset_handler()
 
     def _save_init_file(self) -> None:
         dpg.save_init_file("./py6502ui.ini")
-
-    def _on_key_press(self, sender, app_data, user_data) -> None:
-        if self.system is None:
-            return
-        if not dpg.get_item_state(VIDEO_WINDOW_TAG).get("focused", False):
-            return
-
-        shift_down = dpg.is_key_down(dpg.mvKey_LShift) or dpg.is_key_down(dpg.mvKey_RShift)
-
-        if app_data == dpg.mvKey_Return:
-            self._key_buffer.append(0x0D)
-            return
-        if app_data == dpg.mvKey_Back:
-            self._key_buffer.append(0x08)
-            return
-        if app_data == dpg.mvKey_Escape:
-            self._key_buffer.append(0x1B)
-            return
-
-        char = _key_to_char(app_data, shift_down)
-        if char is not None:
-            self._key_buffer.append(ord(char))
-
-
-def _key_to_char(app_data: int, shift_down: bool) -> str | None:
-    """
-    Translate a DearPyGui key code into the Apple I's ASCII character
-    set. Returns None for unknown keys.
-    """
-    if dpg.mvKey_A <= app_data <= dpg.mvKey_Z:
-        return chr(app_data - dpg.mvKey_A + ord('A'))
-    if dpg.mvKey_0 <= app_data <= dpg.mvKey_9:
-        if shift_down:
-            return ")!@#$%^&*("[app_data - dpg.mvKey_0]
-        return chr(app_data - dpg.mvKey_0 + ord('0'))
-    if app_data == dpg.mvKey_Spacebar:
-        return ' '
-    if app_data == dpg.mvKey_Comma:
-        return '<' if shift_down else ','
-    if app_data == dpg.mvKey_Period:
-        return '>' if shift_down else '.'
-    if app_data == dpg.mvKey_Slash:
-        return '?' if shift_down else '/'
-    if app_data == 601:
-        return ':' if shift_down else ';'
-    if app_data == 596:
-        return '"' if shift_down else "'"
-    if app_data == dpg.mvKey_Open_Brace:
-        return '{' if shift_down else '['
-    if app_data == dpg.mvKey_Close_Brace:
-        return '}' if shift_down else ']'
-    if app_data == dpg.mvKey_Backslash:
-        return '|' if shift_down else '\\'
-    if app_data == dpg.mvKey_Minus:
-        return '_' if shift_down else '-'
-    if app_data == 602:
-        return '+' if shift_down else '='
-    if app_data == 606:
-        return '~' if shift_down else '`'
-    return None
