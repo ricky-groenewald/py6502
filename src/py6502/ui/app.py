@@ -29,8 +29,8 @@ class Py6502App:
         self.context = dpg.create_context()
         self.viewport = dpg.create_viewport(
             title="Py6502",
-            width=VideoWindow.TEXTURE_WIDTH * 3 + DebugWindow.WINDOW_WIDTH + 48,
-            height=VideoWindow.TEXTURE_HEIGHT * 3 + 80,
+            width=VideoWindow.TEXTURE_WIDTH * 3 + DebugWindow.WINDOW_WIDTH + 80,
+            height=VideoWindow.TEXTURE_HEIGHT * 3 + 120,
         )
         dpg.setup_dearpygui()
         dpg.configure_app(init_file="./py6502ui.ini")
@@ -104,7 +104,22 @@ class Py6502App:
 
     def _load_system(self, yaml_path: str) -> None:
         """Load a System from a YAML config and wire it into the UI."""
-        self.system = System.from_yaml_file(yaml_path)
+        system = System.from_yaml_file(yaml_path)
+        self._wire_system(system)
+        # Persist last-used system
+        self.settings.last_system_path = yaml_path
+        save_settings(self.settings)
+
+    def _load_system_from_instance(self, system: System, name: str = "") -> None:
+        """Wire a pre-built System into the UI (used by custom system builder)."""
+        self._wire_system(system)
+        # Custom systems have no persistent path
+        self.settings.last_system_path = None
+        save_settings(self.settings)
+
+    def _wire_system(self, system: System) -> None:
+        """Common setup after a System is constructed."""
+        self.system = system
         self._apply_settings_to_system()
         self._key_buffer.clear()
         self._sim_error = None
@@ -114,9 +129,6 @@ class Py6502App:
         self._video.update_framebuffer(self.system.get_framebuffer())
         self._debug.refresh(self.system)
         dpg.focus_item(VideoWindow.VIDEO_WINDOW_TAG)
-        # Persist last-used system
-        self.settings.last_system_path = yaml_path
-        save_settings(self.settings)
 
     def _apply_settings_to_system(self) -> None:
         if self.system is None:
