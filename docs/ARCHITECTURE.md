@@ -307,6 +307,8 @@ The **external API** is deliberately tiny:
 ```cython
 cpdef void run_cycles(self, unsigned long master_cycles)
 cpdef void run_for_microseconds(self, unsigned long microseconds)
+cpdef unsigned long step_cycle(self)       # debug: advance one CPU clock cycle
+cpdef unsigned long step_instruction(self) # debug: advance one full instruction
 cpdef void reset(self)
 cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
 cpdef Registers get_registers(self)
@@ -321,6 +323,17 @@ cpdef void set_unmapped_memory_mode(self, bint crash)
 cpdef bint send_key(self, unsigned char char_)
 cpdef void clear_input_buffer(self)
 ```
+
+```python
+system.memory_region_names   # property: tuple of configured region names
+```
+
+`step_cycle` and `step_instruction` are debug-only entry points — not
+called on the continuous-run hot path. `step_cycle` delegates to
+`run_cycles(1)`. `step_instruction` loops `run_cycles(1)` in Cython,
+checking `get_registers()` between calls until the CPU loads a new
+opcode (OPCODE_ADDR or OPCODE changes). Both return the number of
+cycles consumed.
 
 `peek`/`poke` forward to the `main` bus and exist for tests + debug
 panels. The CPU hot path still calls the `cdef read`/`write` directly

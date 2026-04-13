@@ -15,6 +15,8 @@ cdef class System:
 
     cpdef void run_cycles(self, unsigned long cycles) except *
     cpdef void run_for_microseconds(self, unsigned long microseconds) except *
+    cpdef unsigned long step_cycle(self) except *
+    cpdef unsigned long step_instruction(self) except *
     cpdef void reset(self)
     cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
     cpdef Registers get_registers(self)
