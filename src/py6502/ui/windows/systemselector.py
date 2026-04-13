@@ -284,7 +284,7 @@ class SystemSelectorWindow:
                     color=(180, 180, 180),
                 )
             if meta["tags"]:
-                tags_str = ", ".join(meta["tags"])
+                tags_str = ", ".join(str(t) for t in meta["tags"])
                 dpg.add_text(
                     f"Tags: {tags_str}", parent=INFO_PANE_TAG,
                     color=(180, 180, 180),
