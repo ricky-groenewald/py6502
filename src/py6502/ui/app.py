@@ -12,6 +12,7 @@ from py6502.sim.system import System
 from py6502.ui.themes import ThemeManager
 from py6502.ui.utils.keyhandler import KeyHandler
 from py6502.ui.utils.settings import AppSettings, load_settings, save_settings
+from py6502.ui.windows.binaryloader import BinaryLoaderWindow
 from py6502.ui.windows.debug import DebugWindow
 from py6502.ui.windows.settings import SettingsWindow
 from py6502.ui.windows.systemselector import SystemSelectorWindow
@@ -56,6 +57,9 @@ class Py6502App:
         self._system_selector = SystemSelectorWindow(self)
         self._system_selector.build()
 
+        self._binary_loader = BinaryLoaderWindow(self)
+        self._binary_loader.build()
+
         self._key_handler = KeyHandler(self._video, self._key_buffer)
         self._key_handler.build()
 
@@ -74,6 +78,7 @@ class Py6502App:
                     label="New System...", tag="NewSystemMenuItem",
                     callback=self._show_system_selector,
                 )
+                dpg.add_menu_item(label="Load Binary...", tag="LoadBinaryMenuItem", callback=self._show_binary_loader)
                 dpg.add_menu_item(label="Reset System", tag="ResetMenuItem", callback=self._reset_system)
                 dpg.add_separator(tag="FileMenuSeparator1")
                 dpg.add_menu_item(label="Settings...", tag="SettingsMenuItem", callback=self._show_settings)
@@ -150,6 +155,9 @@ class Py6502App:
     # ------------------------------------------------------------------
     def _show_system_selector(self) -> None:
         self._system_selector.show()
+
+    def _show_binary_loader(self) -> None:
+        self._binary_loader.show()
 
     def _show_settings(self) -> None:
         self._settings_window.show()
