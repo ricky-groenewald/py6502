@@ -2,7 +2,7 @@
 Py6502App — DearPyGui shell that boots a configurable System preset and
 renders video + debug panels at 60 Hz. See GH #8 for v0.1 UI scope.
 """
-from importlib import resources
+from pathlib import Path
 
 import dearpygui.dearpygui as dpg
 
@@ -11,9 +11,10 @@ from py6502.sim.cpu.mos6502 import InvalidOPCode
 from py6502.sim.system import System
 from py6502.ui.themes import ThemeManager
 from py6502.ui.utils.keyhandler import KeyHandler
-from py6502.ui.utils.settings import AppSettings, load_settings
+from py6502.ui.utils.settings import AppSettings, load_settings, save_settings
 from py6502.ui.windows.debug import DebugWindow
 from py6502.ui.windows.settings import SettingsWindow
+from py6502.ui.windows.systemselector import SystemSelectorWindow
 from py6502.ui.windows.video import VideoWindow
 
 
@@ -35,7 +36,7 @@ class Py6502App:
         self.system: System | None = None
         self.settings: AppSettings = load_settings()
         self._key_buffer: list[int] = []
-        self._sim_running = True
+        self._sim_running = False
         self._sim_error: str | None = None
 
         self.themes = ThemeManager()
@@ -52,15 +53,16 @@ class Py6502App:
         self._settings_window = SettingsWindow(self)
         self._settings_window.build()
 
+        self._system_selector = SystemSelectorWindow(self)
+        self._system_selector.build()
+
         self._key_handler = KeyHandler(self._video, self._key_buffer)
         self._key_handler.build()
 
         dpg.show_viewport()
         dpg.set_primary_window(VideoWindow.VIDEO_WINDOW_TAG, True)
 
-        self._load_default_system()
-        if self.system is not None:
-            self._debug.refresh(self.system)
+        self._startup_load()
 
     # ------------------------------------------------------------------
     # Build helpers
@@ -68,6 +70,10 @@ class Py6502App:
     def _build_menu_bar(self) -> None:
         with dpg.viewport_menu_bar():
             with dpg.menu(label="File", tag="FileMenu"):
+                dpg.add_menu_item(
+                    label="New System...", tag="NewSystemMenuItem",
+                    callback=self._show_system_selector,
+                )
                 dpg.add_menu_item(label="Reset System", tag="ResetMenuItem", callback=self._reset_system)
                 dpg.add_separator(tag="FileMenuSeparator1")
                 dpg.add_menu_item(label="Settings...", tag="SettingsMenuItem", callback=self._show_settings)
@@ -76,10 +82,31 @@ class Py6502App:
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(label="About", callback=lambda: dpg.show_tool(dpg.mvTool_About))
 
-    def _load_default_system(self) -> None:
-        preset = resources.files("py6502.sim.assets").joinpath("presets/apple1.yaml")
-        self.system = System.from_yaml_file(preset)
+    def _startup_load(self) -> None:
+        """Decide what to load on launch based on settings."""
+        if self.settings.startup_with_last_system and self.settings.last_system_path:
+            path = Path(self.settings.last_system_path)
+            if path.exists():
+                self._load_system(str(path))
+                return
+        # Default: show the system selector
+        self._system_selector.show()
+
+    def _load_system(self, yaml_path: str) -> None:
+        """Load a System from a YAML config and wire it into the UI."""
+        self.system = System.from_yaml_file(yaml_path)
         self._apply_settings_to_system()
+        self._key_buffer.clear()
+        self._sim_error = None
+        self._sim_running = True
+        self._debug.on_reset()
+        self._debug.on_sim_state_changed(running=True)
+        self._video.update_framebuffer(self.system.get_framebuffer())
+        self._debug.refresh(self.system)
+        dpg.focus_item(VideoWindow.VIDEO_WINDOW_TAG)
+        # Persist last-used system
+        self.settings.last_system_path = yaml_path
+        save_settings(self.settings)
 
     def _apply_settings_to_system(self) -> None:
         if self.system is None:
@@ -121,6 +148,9 @@ class Py6502App:
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
+    def _show_system_selector(self) -> None:
+        self._system_selector.show()
+
     def _show_settings(self) -> None:
         self._settings_window.show()
 
