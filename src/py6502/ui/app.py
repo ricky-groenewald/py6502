@@ -9,6 +9,7 @@ import dearpygui.dearpygui as dpg
 from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 import InvalidOPCode
 from py6502.sim.system import System
+from py6502.ui.themes import ThemeManager
 from py6502.ui.utils.keyhandler import KeyHandler
 from py6502.ui.windows.debug import DebugWindow
 from py6502.ui.windows.video import VideoWindow
@@ -33,6 +34,9 @@ class Py6502App:
         self._key_buffer: list[int] = []
         self._sim_running = True
         self._sim_error: str | None = None
+
+        self.themes = ThemeManager()
+        self.themes.build()
 
         self._video = VideoWindow(self)
         self._video.build_texture_registry()

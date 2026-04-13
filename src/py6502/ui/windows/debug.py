@@ -70,6 +70,7 @@ class DebugWindow:
         self._mem_monitor_page = 0x00
 
     def build(self) -> None:
+        disabled_theme = self._app.themes.disabled_button
         with dpg.window(
             label="Debug",
             width=self.WINDOW_WIDTH,
@@ -100,6 +101,10 @@ class DebugWindow:
                     label="Reset", tag=RESET_BUTTON_TAG,
                     callback=self._reset_handler,
                 )
+            # Apply disabled theme to all control buttons
+            for tag in (PLAY_BUTTON_TAG, PAUSE_BUTTON_TAG, INST_STEP_BUTTON_TAG,
+                        CYCLE_STEP_BUTTON_TAG, RESET_BUTTON_TAG):
+                dpg.bind_item_theme(tag, disabled_theme)
 
             dpg.add_separator()
 
