@@ -11,7 +11,9 @@ from py6502.sim.cpu.mos6502 import InvalidOPCode
 from py6502.sim.system import System
 from py6502.ui.themes import ThemeManager
 from py6502.ui.utils.keyhandler import KeyHandler
+from py6502.ui.utils.settings import AppSettings, load_settings
 from py6502.ui.windows.debug import DebugWindow
+from py6502.ui.windows.settings import SettingsWindow
 from py6502.ui.windows.video import VideoWindow
 
 
@@ -31,6 +33,7 @@ class Py6502App:
         dpg.set_exit_callback(self._save_init_file)
 
         self.system: System | None = None
+        self.settings: AppSettings = load_settings()
         self._key_buffer: list[int] = []
         self._sim_running = True
         self._sim_error: str | None = None
@@ -45,6 +48,9 @@ class Py6502App:
 
         self._debug = DebugWindow(self)
         self._debug.build()
+
+        self._settings_window = SettingsWindow(self)
+        self._settings_window.build()
 
         self._key_handler = KeyHandler(self._video, self._key_buffer)
         self._key_handler.build()
@@ -64,28 +70,24 @@ class Py6502App:
             with dpg.menu(label="File", tag="FileMenu"):
                 dpg.add_menu_item(label="Reset System", tag="ResetMenuItem", callback=self._reset_system)
                 dpg.add_separator(tag="FileMenuSeparator1")
+                dpg.add_menu_item(label="Settings...", tag="SettingsMenuItem", callback=self._show_settings)
+                dpg.add_separator(tag="FileMenuSeparator2")
                 dpg.add_menu_item(label="Exit", tag="ExitMenuItem", callback=dpg.stop_dearpygui)
-            with dpg.menu(label="Settings", tag="SettingsMenu"):
-                dpg.add_menu_item(
-                    label="Halt on invalid opcode",
-                    tag="SettingsInvalidOpcode",
-                    check=True,
-                    default_value=True,
-                    callback=self._on_invalid_opcode_toggle,
-                )
-                dpg.add_menu_item(
-                    label="Halt on unmapped memory",
-                    tag="SettingsUnmappedMemory",
-                    check=True,
-                    default_value=False,
-                    callback=self._on_unmapped_memory_toggle,
-                )
             with dpg.menu(label="Help"):
                 dpg.add_menu_item(label="About", callback=lambda: dpg.show_tool(dpg.mvTool_About))
 
     def _load_default_system(self) -> None:
         preset = resources.files("py6502.sim.assets").joinpath("presets/apple1.yaml")
         self.system = System.from_yaml_file(preset)
+        self._apply_settings_to_system()
+
+    def _apply_settings_to_system(self) -> None:
+        if self.system is None:
+            return
+        self.system.set_invalid_opcode_mode(
+            1 if self.settings.halt_on_invalid_opcode else 0,
+        )
+        self.system.set_unmapped_memory_mode(self.settings.halt_on_unmapped_memory)
 
     # ------------------------------------------------------------------
     # Per-frame loop
@@ -116,17 +118,12 @@ class Py6502App:
         self._sim_error = str(exc)
         self._debug.on_sim_state_changed(running=False, error=str(exc))
 
-    def _on_invalid_opcode_toggle(self, sender, app_data, user_data) -> None:
-        if self.system is not None:
-            self.system.set_invalid_opcode_mode(1 if app_data else 0)
-
-    def _on_unmapped_memory_toggle(self, sender, app_data, user_data) -> None:
-        if self.system is not None:
-            self.system.set_unmapped_memory_mode(app_data)
-
     # ------------------------------------------------------------------
     # Callbacks
     # ------------------------------------------------------------------
+    def _show_settings(self) -> None:
+        self._settings_window.show()
+
     def _play_handler(self) -> None:
         self._sim_running = True
         self._debug.on_sim_state_changed(running=True)
