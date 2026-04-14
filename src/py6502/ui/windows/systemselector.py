@@ -30,6 +30,8 @@ USER_GROUP_TAG = "SystemSelectorUserGroup"
 RIGHT_PANE_TAG = "SystemSelectorRightPane"
 INFO_PANE_TAG = "SystemSelectorInfoPane"
 FILE_DIALOG_TAG = "SystemSelectorFileDialog"
+REMOVE_CONFIRM_TAG = "SystemSelectorRemoveConfirm"
+REMOVE_CONFIRM_MESSAGE_TAG = "SystemSelectorRemoveConfirmMessage"
 
 _SLUG_RE = re.compile(r"[^a-z0-9_]+")
 
@@ -93,6 +95,7 @@ class SystemSelectorWindow:
         # Per-preset option selections, keyed by preset path. Persists across
         # re-selects so the user's picks stick if they navigate away and back.
         self._option_values: dict[str, dict[str, object]] = {}
+        self._remove_target_path: str | None = None
 
     def build(self) -> None:
         with dpg.window(
@@ -138,6 +141,21 @@ class SystemSelectorWindow:
             dpg.add_file_extension(".bin", color=(0, 255, 0, 255))
             dpg.add_file_extension(".rom", color=(0, 255, 0, 255))
             dpg.add_file_extension(".*")
+
+        with dpg.window(
+            label="Remove user config",
+            modal=True, show=False, no_resize=True,
+            width=420, height=140, tag=REMOVE_CONFIRM_TAG,
+        ):
+            dpg.add_text("Remove ...", tag=REMOVE_CONFIRM_MESSAGE_TAG, wrap=380)
+            dpg.add_text(
+                "The YAML file on disk is not deleted.",
+                color=(180, 180, 180),
+            )
+            dpg.add_spacer(height=8)
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Remove", width=120, callback=self._on_remove_confirmed)
+                dpg.add_button(label="Cancel", width=120, callback=self._on_remove_cancelled)
 
     def _build_custom_card(self) -> None:
         card_theme = self._app.themes.card_button
@@ -475,10 +493,27 @@ class SystemSelectorWindow:
         self._reset_custom_form()
 
     def _on_remove_user_config(self, path: str) -> None:
-        if path in self._app.settings.user_config_paths:
+        """X button: open confirmation modal, don't remove yet."""
+        if path not in self._app.settings.user_config_paths:
+            return
+        self._remove_target_path = path
+        meta = next((e for e in self._entries if e["path"] == path), None)
+        name = meta["name"] if meta else Path(path).name
+        dpg.set_value(REMOVE_CONFIRM_MESSAGE_TAG, f"Remove \"{name}\" from the list?")
+        dpg.show_item(REMOVE_CONFIRM_TAG)
+
+    def _on_remove_confirmed(self) -> None:
+        path = self._remove_target_path
+        self._remove_target_path = None
+        dpg.hide_item(REMOVE_CONFIRM_TAG)
+        if path and path in self._app.settings.user_config_paths:
             self._app.settings.user_config_paths.remove(path)
             save_settings(self._app.settings)
             self._refresh_entries()
+
+    def _on_remove_cancelled(self) -> None:
+        self._remove_target_path = None
+        dpg.hide_item(REMOVE_CONFIRM_TAG)
 
     # ------------------------------------------------------------------
     # Launch
