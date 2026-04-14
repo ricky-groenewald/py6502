@@ -5,7 +5,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-DEFAULT_SETTINGS_PATH = Path("./py6502_settings.json")
+from py6502.ui.utils import paths
 
 
 @dataclass
@@ -18,8 +18,9 @@ class AppSettings:
     halt_on_unmapped_memory: bool = False
 
 
-def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> AppSettings:
-    """Read settings from *path*. Returns defaults on missing/corrupt file."""
+def load_settings(path: Path | None = None) -> AppSettings:
+    """Read settings from *path* (defaults to the user data dir). Returns defaults on missing/corrupt file."""
+    path = path or paths.settings_path()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return AppSettings(
@@ -34,6 +35,7 @@ def load_settings(path: Path = DEFAULT_SETTINGS_PATH) -> AppSettings:
         return AppSettings()
 
 
-def save_settings(settings: AppSettings, path: Path = DEFAULT_SETTINGS_PATH) -> None:
-    """Write settings to *path* as pretty-printed JSON."""
+def save_settings(settings: AppSettings, path: Path | None = None) -> None:
+    """Write settings to *path* (defaults to the user data dir) as pretty-printed JSON."""
+    path = path or paths.settings_path()
     path.write_text(json.dumps(asdict(settings), indent=2) + "\n", encoding="utf-8")

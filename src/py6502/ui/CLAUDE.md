@@ -22,6 +22,7 @@ windows/                  DearPyGui modals and panels
 utils/                    Small helpers
 ├── keyhandler.py         Keyboard input handler (DPG key → Apple I ASCII)
 ├── instructionmaps.py    Opcode lookup tables
+├── paths.py              Per-user data directory (settings, DPG ini, saved configs)
 ├── presets.py            Preset YAML discovery
 └── settings.py           Settings persistence (JSON)
 themes.py                 ThemeManager — DearPyGui theme factories
@@ -75,11 +76,13 @@ is how we stay fast enough to run NES workloads in v0.2.
 - **Tagged items have string tags**, not raw IDs. Tag names look like
   `PlayButton`, `DebugWindow`, `SystemSelectorPresetGroup` — PascalCase
   with a descriptive suffix. Grep-ability matters more than brevity.
-- **`init_file`** — the app reads and writes `./py6502ui.ini` via
+- **`init_file`** — the app reads and writes `py6502.ini` (window layout)
+  under the per-user data directory (`utils/paths.dpg_init_path()`), via
   `dpg.configure_app(init_file=...)` + `dpg.save_init_file` on exit. Don't
   delete it; it's how window layouts survive restarts.
-- **App settings** live in `./py6502_settings.json` (separate from the
-  `.ini` which only stores window layout).
+- **App settings** live next to it as `py6502_settings.json` (separate from
+  the `.ini` which only stores window layout). Both resolve through
+  `utils/paths.py`, not hardcoded CWD paths.
 - **Themes live in `themes.py`** as a `ThemeManager` class. Don't inline
   colour tuples into widgets.
 - **One file per window/panel** under `windows/`. A window class owns its

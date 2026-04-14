@@ -11,6 +11,7 @@ from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 import InvalidOPCode
 from py6502.sim.system import System
 from py6502.ui.themes import ThemeManager
+from py6502.ui.utils import paths
 from py6502.ui.utils.keyhandler import KeyHandler
 from py6502.ui.utils.settings import AppSettings, load_settings, save_settings
 from py6502.ui.windows.about import AboutWindow
@@ -33,7 +34,7 @@ class Py6502App:
             height=VideoWindow.TEXTURE_HEIGHT * 3 + 120,
         )
         dpg.setup_dearpygui()
-        dpg.configure_app(init_file="./py6502ui.ini")
+        dpg.configure_app(init_file=str(paths.dpg_init_path()))
         dpg.set_exit_callback(self._save_init_file)
 
         self.system: System | None = None
@@ -216,4 +217,4 @@ class Py6502App:
         self._reset_handler()
 
     def _save_init_file(self) -> None:
-        dpg.save_init_file("./py6502ui.ini")
+        dpg.save_init_file(str(paths.dpg_init_path()))
