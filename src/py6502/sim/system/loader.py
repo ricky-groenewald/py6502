@@ -8,6 +8,7 @@ rule raises ``ConfigError`` with a human-readable message.
 """
 from __future__ import annotations
 
+import re
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,8 @@ from py6502.sim.system.config import (
     ConfigError,
     CpuSpec,
     MemoryRegion,
+    OptionChoice,
+    OptionSpec,
     SystemConfig,
 )
 from py6502.sim.system.registry import COMPONENT_REGISTRY
@@ -28,7 +31,7 @@ from py6502.sim.system.registry import COMPONENT_REGISTRY
 SUPPORTED_SCHEMA_VERSIONS = (1,)
 
 _TOP_LEVEL_REQUIRED = {"version", "id", "name", "description", "cpu", "memory"}
-_TOP_LEVEL_OPTIONAL = {"buses", "display", "inputs", "audio", "other", "author", "tags"}
+_TOP_LEVEL_OPTIONAL = {"buses", "display", "inputs", "audio", "other", "author", "tags", "options"}
 _TOP_LEVEL_ALLOWED = _TOP_LEVEL_REQUIRED | _TOP_LEVEL_OPTIONAL
 
 _CPU_REQUIRED = {"type", "hz"}
@@ -38,20 +41,46 @@ _MEMORY_ALLOWED = _MEMORY_REQUIRED | {"read_only", "bus", "source", "load_offset
 _COMPONENT_REQUIRED = {"type", "address"}
 _COMPONENT_ALLOWED = _COMPONENT_REQUIRED | {"bus", "params"}
 
+_OPTION_REQUIRED = {"id", "label", "kind", "target", "default"}
+_OPTION_ALLOWED = _OPTION_REQUIRED | {"choices", "min", "max", "description"}
+_OPTION_KINDS = {"enum", "int", "hex", "bool"}
+_OPTION_ID_RE = re.compile(r"^[a-z0-9_]+$")
+# Matches one token in a target path: "name" or "name[key]".
+# "key" may be an integer index or a region/entry name (letters, digits, underscore, hyphen).
+_TARGET_TOKEN_RE = re.compile(r"^([a-z_][a-z0-9_]*)(?:\[([a-zA-Z0-9_\-]+)\])?$")
+
 
 def from_yaml_file(path: str | Path) -> SystemConfig:
-    """Load a system config from a YAML file on disk."""
+    """Load a system config from a YAML file on disk, applying option defaults."""
+    return from_yaml_file_with_options(path, {})
+
+
+def from_yaml_file_with_options(
+    path: str | Path,
+    option_values: dict[str, object],
+) -> SystemConfig:
+    """
+    Load a system config from a YAML file with user-selected option values.
+
+    Any options the preset declares but ``option_values`` does not override
+    fall back to the option's declared ``default``.
+    """
     path = Path(path)
     text = path.read_text()
-    return from_yaml_text(text, base_dir=path.parent)
+    return from_yaml_text(text, base_dir=path.parent, option_values=option_values)
 
 
-def from_yaml_text(text: str, base_dir: Path) -> SystemConfig:
+def from_yaml_text(
+    text: str,
+    base_dir: Path,
+    option_values: dict[str, object] | None = None,
+) -> SystemConfig:
     """
     Parse ``text`` as YAML, validate it, and return a ``SystemConfig``.
 
     ``base_dir`` is the directory used to resolve ``file:`` URIs on
-    memory regions.
+    memory regions. ``option_values`` maps option ids to user-selected
+    values; missing entries fall back to each option's declared default.
     """
     try:
         raw = yaml.safe_load(text)
@@ -82,6 +111,9 @@ def from_yaml_text(text: str, base_dir: Path) -> SystemConfig:
         raise ConfigError(
             f"Rule 3: unknown top-level fields: {sorted(unknown)}"
         )
+
+    options = _parse_options(raw.get("options"))
+    _apply_options(raw, options, option_values or {})
 
     cpu = _parse_cpu(raw["cpu"])
     buses = _parse_buses(raw.get("buses"))
@@ -189,6 +221,7 @@ def from_yaml_text(text: str, base_dir: Path) -> SystemConfig:
         other=other,
         author=raw.get("author"),
         tags=tuple(raw.get("tags") or ()),
+        options=options,
     )
 
 
@@ -337,3 +370,226 @@ def _iter_component_specs(display, inputs, audio, other):
         yield audio, "audio"
     for i, spec in enumerate(other):
         yield spec, f"other[{i}]"
+
+
+def _parse_options(raw: Any) -> tuple[OptionSpec, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError("options must be a list")
+
+    seen_ids: set[str] = set()
+    out: list[OptionSpec] = []
+    for i, entry in enumerate(raw):
+        label_for_err = f"options[{i}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{label_for_err} must be a mapping")
+        missing = _OPTION_REQUIRED - entry.keys()
+        if missing:
+            raise ConfigError(f"{label_for_err} missing required fields: {sorted(missing)}")
+        unknown = entry.keys() - _OPTION_ALLOWED
+        if unknown:
+            raise ConfigError(f"{label_for_err} has unknown fields: {sorted(unknown)}")
+
+        opt_id = entry["id"]
+        if not isinstance(opt_id, str) or not _OPTION_ID_RE.match(opt_id):
+            raise ConfigError(
+                f"{label_for_err}.id must match [a-z0-9_]+, got {opt_id!r}"
+            )
+        if opt_id in seen_ids:
+            raise ConfigError(f"duplicate option id {opt_id!r}")
+        seen_ids.add(opt_id)
+
+        kind = entry["kind"]
+        if kind not in _OPTION_KINDS:
+            raise ConfigError(
+                f"{label_for_err}.kind must be one of {sorted(_OPTION_KINDS)}, got {kind!r}"
+            )
+
+        label = entry["label"]
+        if not isinstance(label, str):
+            raise ConfigError(f"{label_for_err}.label must be a string")
+
+        target = entry["target"]
+        if not isinstance(target, str):
+            raise ConfigError(f"{label_for_err}.target must be a string")
+        _validate_target_syntax(target, label_for_err)
+
+        default = entry["default"]
+        min_v = entry.get("min")
+        max_v = entry.get("max")
+
+        choices: tuple[OptionChoice, ...] = ()
+        if kind == "enum":
+            raw_choices = entry.get("choices")
+            if not isinstance(raw_choices, list) or not raw_choices:
+                raise ConfigError(f"{label_for_err}.choices must be a non-empty list for kind 'enum'")
+            parsed: list[OptionChoice] = []
+            for j, ch in enumerate(raw_choices):
+                if not isinstance(ch, dict):
+                    raise ConfigError(f"{label_for_err}.choices[{j}] must be a mapping")
+                if "value" not in ch or "label" not in ch:
+                    raise ConfigError(
+                        f"{label_for_err}.choices[{j}] missing required fields: ['label', 'value']"
+                    )
+                parsed.append(OptionChoice(value=ch["value"], label=str(ch["label"])))
+            choices = tuple(parsed)
+            values = {c.value for c in choices}
+            if default not in values:
+                raise ConfigError(
+                    f"{label_for_err}.default {default!r} is not in choices {sorted(values, key=str)}"
+                )
+        elif kind in ("int", "hex"):
+            if not isinstance(default, int) or isinstance(default, bool):
+                raise ConfigError(f"{label_for_err}.default must be an integer for kind {kind!r}")
+            if min_v is not None and default < min_v:
+                raise ConfigError(f"{label_for_err}.default {default} below min {min_v}")
+            if max_v is not None and default > max_v:
+                raise ConfigError(f"{label_for_err}.default {default} above max {max_v}")
+        elif kind == "bool":
+            if not isinstance(default, bool):
+                raise ConfigError(f"{label_for_err}.default must be a boolean for kind 'bool'")
+
+        out.append(OptionSpec(
+            id=opt_id,
+            label=label,
+            kind=kind,
+            target=target,
+            default=default,
+            choices=choices,
+            min=min_v if isinstance(min_v, int) else None,
+            max=max_v if isinstance(max_v, int) else None,
+            description=entry.get("description"),
+        ))
+    return tuple(out)
+
+
+def _validate_target_syntax(path: str, label: str) -> None:
+    if not path:
+        raise ConfigError(f"{label}.target must not be empty")
+    for token in path.split("."):
+        if not _TARGET_TOKEN_RE.match(token):
+            raise ConfigError(
+                f"{label}.target token {token!r} is malformed — expected 'name' or 'name[key]'"
+            )
+
+
+def _apply_options(
+    raw: dict,
+    options: tuple[OptionSpec, ...],
+    values: dict[str, object],
+) -> None:
+    """Resolve each option's target path and write its value into the raw dict."""
+    # Reject values that don't correspond to any declared option — catches typos early.
+    declared_ids = {o.id for o in options}
+    unknown = set(values.keys()) - declared_ids
+    if unknown:
+        raise ConfigError(
+            f"Rule 12: option values reference unknown ids: {sorted(unknown)}"
+        )
+
+    for opt in options:
+        value = values.get(opt.id, opt.default)
+        if opt.kind == "enum" and value not in {c.value for c in opt.choices}:
+            raise ConfigError(
+                f"Rule 12: option {opt.id!r} value {value!r} is not a declared choice"
+            )
+        if opt.kind in ("int", "hex"):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ConfigError(
+                    f"Rule 12: option {opt.id!r} value {value!r} must be an integer"
+                )
+            if opt.min is not None and value < opt.min:
+                raise ConfigError(f"Rule 12: option {opt.id!r} value {value} below min {opt.min}")
+            if opt.max is not None and value > opt.max:
+                raise ConfigError(f"Rule 12: option {opt.id!r} value {value} above max {opt.max}")
+        if opt.kind == "bool" and not isinstance(value, bool):
+            raise ConfigError(
+                f"Rule 12: option {opt.id!r} value {value!r} must be a boolean"
+            )
+
+        container, key = _resolve_target_path(raw, opt.target, opt.id)
+        container[key] = value
+
+
+def _resolve_target_path(
+    raw: dict,
+    path: str,
+    option_id: str,
+) -> tuple[dict, str]:
+    """
+    Walk ``path`` through ``raw`` and return the (container, final_key)
+    pair so the caller can write ``container[final_key] = value``. Auto-
+    creates missing intermediate mappings (e.g. a missing ``params:``
+    block) but never auto-creates through lists.
+    """
+    tokens = path.split(".")
+    cursor: Any = raw
+    for i, token in enumerate(tokens):
+        match = _TARGET_TOKEN_RE.match(token)
+        if match is None:  # pragma: no cover — pre-validated at parse time
+            raise ConfigError(
+                f"Rule 12: option {option_id!r} target token {token!r} is malformed"
+            )
+        key, index_spec = match.group(1), match.group(2)
+        is_last = (i == len(tokens) - 1)
+
+        if index_spec is None:
+            # Plain mapping descent.
+            if not isinstance(cursor, dict):
+                raise ConfigError(
+                    f"Rule 12: option {option_id!r} target {path!r} cannot be resolved: "
+                    f"{key!r} is not a mapping"
+                )
+            if is_last:
+                return cursor, key
+            if key not in cursor or cursor[key] is None:
+                cursor[key] = {}
+            cursor = cursor[key]
+            continue
+
+        # Indexed list element: descend into cursor[key] (list), then resolve index.
+        if not isinstance(cursor, dict) or key not in cursor:
+            raise ConfigError(
+                f"Rule 12: option {option_id!r} target {path!r} cannot be resolved: "
+                f"no list {key!r} found"
+            )
+        container_list = cursor[key]
+        if not isinstance(container_list, list):
+            raise ConfigError(
+                f"Rule 12: option {option_id!r} target {path!r} cannot be resolved: "
+                f"{key!r} is not a list"
+            )
+
+        if index_spec.isdigit():
+            idx = int(index_spec)
+            if idx < 0 or idx >= len(container_list):
+                raise ConfigError(
+                    f"Rule 12: option {option_id!r} target {path!r} cannot be resolved: "
+                    f"index {idx} out of range for {key!r} (len={len(container_list)})"
+                )
+            cursor = container_list[idx]
+        else:
+            found = None
+            for entry in container_list:
+                if isinstance(entry, dict) and entry.get("name") == index_spec:
+                    found = entry
+                    break
+            if found is None:
+                raise ConfigError(
+                    f"Rule 12: option {option_id!r} target {path!r} cannot be resolved: "
+                    f"no entry named {index_spec!r} in {key!r}"
+                )
+            cursor = found
+
+        if is_last:
+            # A bracketed token can't be the terminal — we can only write
+            # into a *field* of a list entry, not replace the entry itself.
+            raise ConfigError(
+                f"Rule 12: option {option_id!r} target {path!r} cannot be resolved: "
+                f"indexed token {token!r} must be followed by a field name"
+            )
+
+    raise ConfigError(  # pragma: no cover — unreachable if tokens is non-empty
+        f"Rule 12: option {option_id!r} target {path!r} produced no terminal"
+    )

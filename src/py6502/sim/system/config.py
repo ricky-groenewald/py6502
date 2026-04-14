@@ -59,6 +59,39 @@ class ComponentSpec:
 
 
 @dataclass(frozen=True)
+class OptionChoice:
+    value: object
+    label: str
+
+
+@dataclass(frozen=True)
+class OptionSpec:
+    """
+    A user-selectable preset option.
+
+    ``target`` is a dotted/bracketed path into the raw YAML dict that the
+    loader writes the option value to *before* schema validation runs —
+    see docs/SYSTEM_CONFIG.md §Options. Supported shapes:
+
+        cpu.<field>
+        memory[<name>].<field>
+        display.<field>           display.params.<key>
+        inputs[<idx>].<field>     inputs[<idx>].params.<key>
+        audio.<field>             audio.params.<key>
+        other[<idx>].<field>      other[<idx>].params.<key>
+    """
+    id: str
+    label: str
+    kind: str
+    target: str
+    default: object
+    choices: tuple[OptionChoice, ...] = ()
+    min: Optional[int] = None
+    max: Optional[int] = None
+    description: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class SystemConfig:
     version: int
     id: str
@@ -73,3 +106,4 @@ class SystemConfig:
     other: tuple[ComponentSpec, ...] = ()
     author: Optional[str] = None
     tags: tuple[str, ...] = ()
+    options: tuple[OptionSpec, ...] = ()
