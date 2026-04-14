@@ -52,7 +52,7 @@ class SystemSelectorWindow:
         with dpg.window(
             label="New System",
             width=820, height=520,
-            show=False, modal=True, no_resize=True,
+            show=False, no_resize=True,
             tag=WINDOW_TAG,
         ):
             with dpg.group(horizontal=True):
@@ -217,14 +217,12 @@ class SystemSelectorWindow:
 
     def _browse_source(self, rid: int) -> None:
         self._source_dialog_target = rid
-        dpg.hide_item(WINDOW_TAG)
         dpg.show_item(SOURCE_FILE_DIALOG_TAG)
 
     def _on_source_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
         file_path = app_data.get("file_path_name", "")
         if file_path and self._source_dialog_target is not None:
             dpg.set_value(f"RegionSource_{self._source_dialog_target}", file_path)
-        dpg.show_item(WINDOW_TAG)
 
     def _reset_custom_form(self) -> None:
         for rid in list(self._region_ids):
@@ -423,15 +421,14 @@ class SystemSelectorWindow:
         dpg.hide_item(WINDOW_TAG)
 
     def _on_browse(self) -> None:
-        dpg.hide_item(WINDOW_TAG)
         dpg.show_item(FILE_DIALOG_TAG)
 
     def _on_yaml_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
         file_path = app_data.get("file_path_name", "")
-        if file_path:
-            if file_path not in self._app.settings.user_config_paths:
-                self._app.settings.user_config_paths.append(file_path)
-                save_settings(self._app.settings)
-            self._refresh_entries()
-            self._on_select(file_path)
-        dpg.show_item(WINDOW_TAG)
+        if not file_path:
+            return
+        if file_path not in self._app.settings.user_config_paths:
+            self._app.settings.user_config_paths.append(file_path)
+            save_settings(self._app.settings)
+        self._refresh_entries()
+        self._on_select(file_path)
