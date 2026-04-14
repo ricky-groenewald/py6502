@@ -1,6 +1,9 @@
 """
 Py6502App — DearPyGui shell that boots a configurable System preset and
-renders video + debug panels at 60 Hz. See GH #8 for v0.1 UI scope.
+renders video + debug panels at the display's native refresh rate. The
+simulator is paced by wall-clock delta so its effective frequency stays
+locked to the configured ``cpu_hz`` regardless of UI frame rate. See
+GH #8 for v0.1 UI scope.
 """
 from pathlib import Path
 from time import perf_counter
@@ -22,7 +25,15 @@ from py6502.ui.windows.systemselector import SystemSelectorWindow
 from py6502.ui.windows.video import VideoWindow
 
 
-FRAME_MICROSECONDS = 16667
+MAX_CATCH_UP_SECONDS = 0.05
+
+
+def _format_hz(hz: float) -> str:
+    if hz >= 1_000_000:
+        return f"{hz / 1_000_000:.2f} MHz"
+    if hz >= 1_000:
+        return f"{hz / 1_000:.2f} kHz"
+    return f"{hz:.0f} Hz"
 
 
 class Py6502App:
@@ -154,25 +165,37 @@ class Py6502App:
     # ------------------------------------------------------------------
     def run(self) -> None:
         frame_count = 0
-        fps_timer = perf_counter()
+        cycles_accum = 0  # cycles *issued* to the sim — never CPU-bound in v0.1, so ≈ delivered
+        last_tick_time = perf_counter()
+        fps_timer = last_tick_time
         while dpg.is_dearpygui_running():
+            now = perf_counter()
+            dt = min(now - last_tick_time, MAX_CATCH_UP_SECONDS)
+            last_tick_time = now
             if self.system is not None:
                 if self._sim_running:
                     self._drain_keys_into_system()
+                    micros = int(dt * 1_000_000)
                     try:
-                        self.system.run_for_microseconds(FRAME_MICROSECONDS)
+                        self.system.run_for_microseconds(micros)
                     except (InvalidOPCode, UnallocatedAddressError) as exc:
                         self._on_sim_error(exc)
+                    else:
+                        cycles_accum += (micros * self.system.cpu_hz) // 1_000_000
                     self._video.update_framebuffer(self.system.get_framebuffer())
                 self._debug.refresh(self.system)
             dpg.render_dearpygui_frame()
             frame_count += 1
-            now = perf_counter()
-            if now - fps_timer >= 2.0:
-                fps = frame_count / (now - fps_timer)
+            elapsed = now - fps_timer
+            if elapsed >= 2.0:
+                fps = frame_count / elapsed
+                avg_hz = cycles_accum / elapsed
                 suffix = f" - {self._system_name}" if self._system_name else ""
-                dpg.set_viewport_title(f"Py6502 - {fps:.0f} FPS{suffix}")
+                dpg.set_viewport_title(
+                    f"Py6502 - {fps:.0f} FPS - {_format_hz(avg_hz)}{suffix}"
+                )
                 frame_count = 0
+                cycles_accum = 0
                 fps_timer = now
         dpg.destroy_context()
 

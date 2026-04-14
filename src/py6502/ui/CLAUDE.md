@@ -36,18 +36,27 @@ The frame loop looks like this:
 
 ```python
 while dpg.is_dearpygui_running():
+    now = perf_counter()
+    dt = min(now - last_tick_time, MAX_CATCH_UP_SECONDS)
+    last_tick_time = now
     if self.system is not None:
         self._drain_keys_into_system()
-        self.system.run_for_microseconds(FRAME_MICROSECONDS)
+        self.system.run_for_microseconds(int(dt * 1_000_000))
         self._video.update_framebuffer(self.system.get_framebuffer())
         self._debug.refresh(self.system)
     dpg.render_dearpygui_frame()
 ```
 
+`dt` is wall-clock-driven, not a fixed per-frame constant: the sim
+advances by however much real time elapsed since the last tick, clamped
+to `MAX_CATCH_UP_SECONDS` so a paused dialog or a stalled frame can't
+trigger a catch-up burst. The sim's effective frequency therefore stays
+locked to `cpu_hz` regardless of the host display's refresh rate.
+
 That frame body is allowed to call **exactly one** of:
 
 - `System.run_cycles(n)`
-- `System.run_for_microseconds(µs)` (usually `16667` at 60 Hz / 1 MHz)
+- `System.run_for_microseconds(µs)` (µs derived from wall-clock dt)
 
 …followed by *reads* against `System.get_framebuffer()`,
 `System.get_registers()`, etc. Those reads are cheap: the framebuffer is a
