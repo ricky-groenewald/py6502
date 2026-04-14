@@ -422,7 +422,7 @@ assets and supports user-loaded YAML configs. Settings are persisted to
 ### 6.1 Config load
 
 ```
-apple_i_4k.yaml
+apple_i.yaml
        │
        │ yaml.safe_load
        ▼

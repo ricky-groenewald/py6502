@@ -40,6 +40,8 @@ def _load_metadata(path: object) -> dict | None:
             "path": str(path),
             "tags": config.tags,
             "author": config.author or "",
+            "options": config.options,
+            "config": config,
         }
     except Exception:
         return None

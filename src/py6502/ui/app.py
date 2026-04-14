@@ -9,8 +9,9 @@ import dearpygui.dearpygui as dpg
 
 from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 import InvalidOPCode
-from py6502.sim.system import System
+from py6502.sim.system import ConfigError, System, from_yaml_file_with_options
 from py6502.ui.themes import ThemeManager
+from py6502.ui.utils import paths
 from py6502.ui.utils.keyhandler import KeyHandler
 from py6502.ui.utils.settings import AppSettings, load_settings, save_settings
 from py6502.ui.windows.about import AboutWindow
@@ -33,10 +34,11 @@ class Py6502App:
             height=VideoWindow.TEXTURE_HEIGHT * 3 + 120,
         )
         dpg.setup_dearpygui()
-        dpg.configure_app(init_file="./py6502ui.ini")
+        dpg.configure_app(init_file=str(paths.dpg_init_path()))
         dpg.set_exit_callback(self._save_init_file)
 
         self.system: System | None = None
+        self._system_name: str = ""
         self.settings: AppSettings = load_settings()
         self._key_buffer: list[int] = []
         self._sim_running = False
@@ -97,29 +99,38 @@ class Py6502App:
         if self.settings.startup_with_last_system and self.settings.last_system_path:
             path = Path(self.settings.last_system_path)
             if path.exists():
-                self._load_system(str(path))
-                return
+                try:
+                    self._load_system(str(path))
+                    return
+                except ConfigError:
+                    pass  # stale persisted state — fall through to selector
         # Default: show the system selector
         self._system_selector.show()
 
-    def _load_system(self, yaml_path: str) -> None:
-        """Load a System from a YAML config and wire it into the UI."""
-        system = System.from_yaml_file(yaml_path)
-        self._wire_system(system)
-        # Persist last-used system
+    def _load_system(
+        self,
+        yaml_path: str,
+        option_values: dict[str, object] | None = None,
+    ) -> None:
+        """Load a System from a YAML config and wire it into the UI.
+
+        If ``option_values`` is None, falls back to whatever values were last
+        used for this path (from settings). An explicit ``{}`` means "use the
+        preset's declared defaults".
+        """
+        if option_values is None:
+            option_values = dict(self.settings.last_option_values.get(yaml_path, {}))
+        config = from_yaml_file_with_options(yaml_path, option_values)
+        system = System(config)
+        self._wire_system(system, config.name)
         self.settings.last_system_path = yaml_path
+        self.settings.last_option_values[yaml_path] = dict(option_values)
         save_settings(self.settings)
 
-    def _load_system_from_instance(self, system: System, name: str = "") -> None:
-        """Wire a pre-built System into the UI (used by custom system builder)."""
-        self._wire_system(system)
-        # Custom systems have no persistent path
-        self.settings.last_system_path = None
-        save_settings(self.settings)
-
-    def _wire_system(self, system: System) -> None:
+    def _wire_system(self, system: System, name: str = "") -> None:
         """Common setup after a System is constructed."""
         self.system = system
+        self._system_name = name
         self._apply_settings_to_system()
         self._key_buffer.clear()
         self._sim_error = None
@@ -159,7 +170,8 @@ class Py6502App:
             now = perf_counter()
             if now - fps_timer >= 2.0:
                 fps = frame_count / (now - fps_timer)
-                dpg.set_viewport_title(f"Py6502 - {fps:.0f} FPS")
+                suffix = f" - {self._system_name}" if self._system_name else ""
+                dpg.set_viewport_title(f"Py6502 - {fps:.0f} FPS{suffix}")
                 frame_count = 0
                 fps_timer = now
         dpg.destroy_context()
@@ -216,4 +228,4 @@ class Py6502App:
         self._reset_handler()
 
     def _save_init_file(self) -> None:
-        dpg.save_init_file("./py6502ui.ini")
+        dpg.save_init_file(str(paths.dpg_init_path()))
