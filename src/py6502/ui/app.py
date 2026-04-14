@@ -9,7 +9,7 @@ import dearpygui.dearpygui as dpg
 
 from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 import InvalidOPCode
-from py6502.sim.system import System
+from py6502.sim.system import System, from_yaml_file_with_options
 from py6502.ui.themes import ThemeManager
 from py6502.ui.utils import paths
 from py6502.ui.utils.keyhandler import KeyHandler
@@ -38,6 +38,7 @@ class Py6502App:
         dpg.set_exit_callback(self._save_init_file)
 
         self.system: System | None = None
+        self._system_name: str = ""
         self.settings: AppSettings = load_settings()
         self._key_buffer: list[int] = []
         self._sim_running = False
@@ -103,24 +104,29 @@ class Py6502App:
         # Default: show the system selector
         self._system_selector.show()
 
-    def _load_system(self, yaml_path: str) -> None:
+    def _load_system(
+        self,
+        yaml_path: str,
+        option_values: dict[str, object] | None = None,
+    ) -> None:
         """Load a System from a YAML config and wire it into the UI."""
-        system = System.from_yaml_file(yaml_path)
-        self._wire_system(system)
-        # Persist last-used system
+        config = from_yaml_file_with_options(yaml_path, option_values or {})
+        system = System(config)
+        self._wire_system(system, config.name)
         self.settings.last_system_path = yaml_path
         save_settings(self.settings)
 
     def _load_system_from_instance(self, system: System, name: str = "") -> None:
         """Wire a pre-built System into the UI (used by custom system builder)."""
-        self._wire_system(system)
+        self._wire_system(system, name)
         # Custom systems have no persistent path
         self.settings.last_system_path = None
         save_settings(self.settings)
 
-    def _wire_system(self, system: System) -> None:
+    def _wire_system(self, system: System, name: str = "") -> None:
         """Common setup after a System is constructed."""
         self.system = system
+        self._system_name = name
         self._apply_settings_to_system()
         self._key_buffer.clear()
         self._sim_error = None
@@ -160,7 +166,8 @@ class Py6502App:
             now = perf_counter()
             if now - fps_timer >= 2.0:
                 fps = frame_count / (now - fps_timer)
-                dpg.set_viewport_title(f"Py6502 - {fps:.0f} FPS")
+                suffix = f" - {self._system_name}" if self._system_name else ""
+                dpg.set_viewport_title(f"Py6502 - {fps:.0f} FPS{suffix}")
                 frame_count = 0
                 fps_timer = now
         dpg.destroy_context()

@@ -9,6 +9,7 @@ from py6502.sim.system import (
     ComponentSpec,
     CpuSpec,
     MemoryRegion,
+    OptionSpec,
     System,
     SystemConfig,
 )
@@ -47,6 +48,9 @@ class SystemSelectorWindow:
         self._region_counter = 0
         self._region_ids: list[int] = []
         self._source_dialog_target: int | None = None
+        # Per-preset option selections, keyed by preset path. Persists across
+        # re-selects so the user's picks stick if they navigate away and back.
+        self._option_values: dict[str, dict[str, object]] = {}
 
     def build(self) -> None:
         with dpg.window(
@@ -301,6 +305,83 @@ class SystemSelectorWindow:
             if meta["tags"]:
                 tags_str = ", ".join(str(t) for t in meta["tags"])
                 dpg.add_text(f"Tags: {tags_str}", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            options = meta.get("options", ())
+            if options:
+                self._render_options(path, options)
+
+    def _render_options(self, path: str, options: tuple[OptionSpec, ...]) -> None:
+        """Render a widget per preset option; user changes update self._option_values."""
+        dpg.add_spacer(parent=INFO_PANE_TAG, height=12)
+        dpg.add_text("Options", parent=INFO_PANE_TAG, color=(255, 255, 0))
+        dpg.add_separator(parent=INFO_PANE_TAG)
+        selections = self._option_values.setdefault(path, {})
+        for opt in options:
+            current = selections.get(opt.id, opt.default)
+            selections[opt.id] = current
+            with dpg.group(horizontal=True, parent=INFO_PANE_TAG):
+                dpg.add_text(f"{opt.label}:")
+                if opt.kind == "enum":
+                    labels = [c.label for c in opt.choices]
+                    current_label = next(
+                        (c.label for c in opt.choices if c.value == current),
+                        labels[0],
+                    )
+                    dpg.add_combo(
+                        items=labels, default_value=current_label, width=180,
+                        callback=self._on_enum_option_changed,
+                        user_data=(path, opt),
+                    )
+                elif opt.kind == "int":
+                    kwargs: dict = {"default_value": int(current), "width": 140}
+                    if opt.min is not None:
+                        kwargs["min_value"] = opt.min
+                        kwargs["min_clamped"] = True
+                    if opt.max is not None:
+                        kwargs["max_value"] = opt.max
+                        kwargs["max_clamped"] = True
+                    dpg.add_input_int(
+                        callback=self._on_int_option_changed,
+                        user_data=(path, opt),
+                        **kwargs,
+                    )
+                elif opt.kind == "hex":
+                    dpg.add_text("0x")
+                    dpg.add_input_text(
+                        default_value=f"{int(current):X}",
+                        width=100, uppercase=True, hexadecimal=True, no_spaces=True,
+                        callback=self._on_hex_option_changed,
+                        user_data=(path, opt),
+                    )
+                elif opt.kind == "bool":
+                    dpg.add_checkbox(
+                        default_value=bool(current),
+                        callback=self._on_bool_option_changed,
+                        user_data=(path, opt),
+                    )
+            if opt.description:
+                dpg.add_text(f"  {opt.description}", parent=INFO_PANE_TAG, color=(150, 150, 150), wrap=440)
+
+    def _on_enum_option_changed(self, sender: int, app_data: str, user_data: tuple) -> None:
+        path, opt = user_data
+        for choice in opt.choices:
+            if choice.label == app_data:
+                self._option_values.setdefault(path, {})[opt.id] = choice.value
+                return
+
+    def _on_int_option_changed(self, sender: int, app_data: int, user_data: tuple) -> None:
+        path, opt = user_data
+        self._option_values.setdefault(path, {})[opt.id] = int(app_data)
+
+    def _on_hex_option_changed(self, sender: int, app_data: str, user_data: tuple) -> None:
+        path, opt = user_data
+        try:
+            self._option_values.setdefault(path, {})[opt.id] = int(app_data, 16) if app_data else opt.default
+        except ValueError:
+            pass  # keep last good value; let validation catch bad input at launch
+
+    def _on_bool_option_changed(self, sender: int, app_data: bool, user_data: tuple) -> None:
+        path, opt = user_data
+        self._option_values.setdefault(path, {})[opt.id] = bool(app_data)
 
     def _on_select_custom(self) -> None:
         self._selected_path = None
@@ -324,7 +405,8 @@ class SystemSelectorWindow:
             self._launch_custom()
         elif self._selected_path is not None:
             dpg.hide_item(WINDOW_TAG)
-            self._app._load_system(self._selected_path)
+            option_values = self._option_values.get(self._selected_path, {})
+            self._app._load_system(self._selected_path, option_values=option_values)
 
     def _launch_custom(self) -> None:
         name = dpg.get_value(CUSTOM_NAME_TAG) or "Custom System"
