@@ -21,6 +21,7 @@ from .config import (
 )
 from .loader import from_yaml_file, from_yaml_file_with_options
 from .system import System
+from .writer import to_yaml_text, write_yaml_file
 
 __all__ = [
     "BusSpec",
@@ -34,4 +35,6 @@ __all__ = [
     "SystemConfig",
     "from_yaml_file",
     "from_yaml_file_with_options",
+    "to_yaml_text",
+    "write_yaml_file",
 ]
