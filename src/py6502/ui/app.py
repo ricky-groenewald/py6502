@@ -9,7 +9,7 @@ import dearpygui.dearpygui as dpg
 
 from py6502.sim.bus.emptyaddress import UnallocatedAddressError
 from py6502.sim.cpu.mos6502 import InvalidOPCode
-from py6502.sim.system import System, from_yaml_file_with_options
+from py6502.sim.system import ConfigError, System, from_yaml_file_with_options
 from py6502.ui.themes import ThemeManager
 from py6502.ui.utils import paths
 from py6502.ui.utils.keyhandler import KeyHandler
@@ -99,8 +99,11 @@ class Py6502App:
         if self.settings.startup_with_last_system and self.settings.last_system_path:
             path = Path(self.settings.last_system_path)
             if path.exists():
-                self._load_system(str(path))
-                return
+                try:
+                    self._load_system(str(path))
+                    return
+                except ConfigError:
+                    pass  # stale persisted state — fall through to selector
         # Default: show the system selector
         self._system_selector.show()
 
@@ -109,11 +112,19 @@ class Py6502App:
         yaml_path: str,
         option_values: dict[str, object] | None = None,
     ) -> None:
-        """Load a System from a YAML config and wire it into the UI."""
-        config = from_yaml_file_with_options(yaml_path, option_values or {})
+        """Load a System from a YAML config and wire it into the UI.
+
+        If ``option_values`` is None, falls back to whatever values were last
+        used for this path (from settings). An explicit ``{}`` means "use the
+        preset's declared defaults".
+        """
+        if option_values is None:
+            option_values = dict(self.settings.last_option_values.get(yaml_path, {}))
+        config = from_yaml_file_with_options(yaml_path, option_values)
         system = System(config)
         self._wire_system(system, config.name)
         self.settings.last_system_path = yaml_path
+        self.settings.last_option_values[yaml_path] = dict(option_values)
         save_settings(self.settings)
 
     def _load_system_from_instance(self, system: System, name: str = "") -> None:

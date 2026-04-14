@@ -19,7 +19,7 @@ def test_apple1_preset_round_trip() -> None:
     config = from_yaml_file(APPLE1_PRESET)
     assert isinstance(config, SystemConfig)
     assert config.version == 1
-    assert config.id == "apple_i_4k"
+    assert config.id == "apple_i"
     assert config.cpu.type == "MOS6502"
     assert config.cpu.hz == 1_000_000
     assert len(config.memory) == 2

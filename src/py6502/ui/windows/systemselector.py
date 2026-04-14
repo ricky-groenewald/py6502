@@ -314,7 +314,12 @@ class SystemSelectorWindow:
         dpg.add_spacer(parent=INFO_PANE_TAG, height=12)
         dpg.add_text("Options", parent=INFO_PANE_TAG, color=(255, 255, 0))
         dpg.add_separator(parent=INFO_PANE_TAG)
-        selections = self._option_values.setdefault(path, {})
+        if path not in self._option_values:
+            # Seed from last-used values for this path (from persisted settings),
+            # so the widgets reflect what the user picked last time.
+            persisted = self._app.settings.last_option_values.get(path, {})
+            self._option_values[path] = dict(persisted)
+        selections = self._option_values[path]
         for opt in options:
             current = selections.get(opt.id, opt.default)
             selections[opt.id] = current
