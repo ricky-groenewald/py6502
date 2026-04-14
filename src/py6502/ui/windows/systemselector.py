@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 
 import dearpygui.dearpygui as dpg
 
-from py6502.sim.system.config import (
+from py6502.sim.system import (
     ComponentSpec,
     CpuSpec,
     MemoryRegion,
+    System,
     SystemConfig,
 )
-from py6502.sim.system import System
 from py6502.ui.utils.presets import discover_presets, load_user_config_metadata
 from py6502.ui.utils.settings import save_settings
 

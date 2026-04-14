@@ -4,7 +4,7 @@ from __future__ import annotations
 from importlib import resources
 from pathlib import Path
 
-from py6502.sim.system.loader import from_yaml_file as _load_config
+from py6502.sim.system import from_yaml_file as _load_config
 
 
 def discover_presets() -> list[dict]:
