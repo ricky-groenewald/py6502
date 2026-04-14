@@ -28,7 +28,6 @@ class BinaryLoaderWindow:
             width=500,
             height=180,
             show=False,
-            modal=True,
             tag=WINDOW_TAG,
         ):
             # File selection row

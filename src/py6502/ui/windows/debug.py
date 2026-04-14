@@ -49,6 +49,7 @@ REG_OPCODE_DISASM_TAG = "RegOpcodeDisasm"
 # Other tags
 SIM_ERROR_TEXT_TAG = "SimErrorText"
 MEM_PAGE_INPUT_TAG = "MemPageInput"
+MEM_PAGE_RANGE_TAG = "MemPageRange"
 MEM_MONITOR_TAG = "MemMonitor"
 
 
@@ -151,7 +152,9 @@ class DebugWindow:
                     hexadecimal=True,
                     no_spaces=True,
                 )
-                dpg.add_text("00 ~ 0xFFxx")
+                dpg.add_text(
+                    " (0x0000 ~ 0x00FF)", tag=MEM_PAGE_RANGE_TAG,
+                )
             dpg.add_text("", tag=MEM_MONITOR_TAG)
 
     def refresh(self, system: System) -> None:
@@ -238,6 +241,9 @@ class DebugWindow:
             return
         self._mem_monitor_page = value
         dpg.set_value(MEM_PAGE_INPUT_TAG, f"{value:02X}")
+        dpg.set_value(
+            MEM_PAGE_RANGE_TAG, f" (0x{value:02X}00 ~ 0x{value:02X}FF)",
+        )
         if self._app.system is not None:
             self._update_memory_monitor(self._app.system)
 
