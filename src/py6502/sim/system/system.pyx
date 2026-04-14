@@ -94,6 +94,10 @@ cdef class System:
     def cpu_hz(self):
         return self._cpu_hz
 
+    @property
+    def memory_region_names(self):
+        return tuple(self._memory_regions.keys())
+
     cpdef void run_cycles(self, unsigned long cycles) except *:
         if cycles:
             (<BusController>self._buses["main"]).run_cycles(cycles)
@@ -101,6 +105,27 @@ cdef class System:
     cpdef void run_for_microseconds(self, unsigned long microseconds) except *:
         if microseconds:
             (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
+
+    cpdef unsigned long step_cycle(self) except *:
+        (<BusController>self._buses["main"]).run_cycles(1)
+        return 1
+
+    cpdef unsigned long step_instruction(self) except *:
+        cdef BusController bus = <BusController>self._buses["main"]
+        cdef Registers start = bus.get_registers()
+        cdef unsigned short start_addr = start.OPCODE_ADDR
+        cdef unsigned char start_op = start.OPCODE
+        cdef unsigned long cycles = 0
+        cdef Registers current
+        while True:
+            bus.run_cycles(1)
+            cycles += 1
+            current = bus.get_registers()
+            if current.OPCODE_ADDR != start_addr or current.OPCODE != start_op:
+                break
+            if cycles > 16:
+                break
+        return cycles
 
     cpdef void reset(self):
         (<BusController>self._buses["main"]).send_reset()

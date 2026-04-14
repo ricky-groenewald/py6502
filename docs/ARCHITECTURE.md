@@ -83,11 +83,9 @@ src/py6502/
 └── ui/                            # DearPyGui frontend (pure Python)
     ├── __init__.py
     ├── app.py                     # Py6502App — menu bar, per-frame loop
-    ├── themes.py                  # DearPyGui theme factories
-    ├── systems/                   # Per-system config UI metadata
-    ├── utils/                     # Opcode maps, formatters
-    ├── windows/                   # Modal + persistent windows
-    └── py6502ui.py                # Legacy monolith (feature reference)
+    ├── themes.py                  # ThemeManager — DearPyGui theme factories
+    ├── utils/                     # Key handler, settings, preset discovery
+    └── windows/                   # Video, debug, system selector, etc.
 ```
 
 ---
@@ -307,6 +305,8 @@ The **external API** is deliberately tiny:
 ```cython
 cpdef void run_cycles(self, unsigned long master_cycles)
 cpdef void run_for_microseconds(self, unsigned long microseconds)
+cpdef unsigned long step_cycle(self)       # debug: advance one CPU clock cycle
+cpdef unsigned long step_instruction(self) # debug: advance one full instruction
 cpdef void reset(self)
 cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
 cpdef Registers get_registers(self)
@@ -321,6 +321,17 @@ cpdef void set_unmapped_memory_mode(self, bint crash)
 cpdef bint send_key(self, unsigned char char_)
 cpdef void clear_input_buffer(self)
 ```
+
+```python
+system.memory_region_names   # property: tuple of configured region names
+```
+
+`step_cycle` and `step_instruction` are debug-only entry points — not
+called on the continuous-run hot path. `step_cycle` delegates to
+`run_cycles(1)`. `step_instruction` loops `run_cycles(1)` in Cython,
+checking `get_registers()` between calls until the CPU loads a new
+opcode (OPCODE_ADDR or OPCODE changes). Both return the number of
+cycles consumed.
 
 `peek`/`poke` forward to the `main` bus and exist for tests + debug
 panels. The CPU hot path still calls the `cdef read`/`write` directly
@@ -400,19 +411,9 @@ never O(cycles).**
 The system-selector modal — a presets browser that reads
 `py6502.sim.assets.presets/*.yaml`, lets the user pick one (and
 eventually tweak its preset options via per-system configurators under
-`py6502/ui/systems/`), and hands the resulting `SystemConfig` to
-`Py6502App` — is v0.1 scope but lands after the abstractions + IaC PR.
-Until then, `Py6502App` loads `apple1.yaml` directly.
-
-### 5.3 Legacy `py6502ui.py`
-
-A monolithic module from the pre-`System` era. It's retained as a
-**feature reference** for what the new shell needs to reach parity on:
-hex + ASCII memory monitor, disassembly view, register panel, binary
-loader, Run/Stop/Step/Reset controls, and video output. The new shell
-does not have to match its implementation — only its feature set. The
-legacy file is not re-exported from `py6502.ui` and will be deleted once
-the new shell is at parity.
+The system selector modal auto-discovers preset YAMLs from bundled
+assets and supports user-loaded YAML configs. Settings are persisted to
+`py6502_settings.json` alongside the DearPyGui layout file.
 
 ---
 

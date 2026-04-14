@@ -6,6 +6,7 @@ __pycache__
 *.so
 *.o
 *.ini
+py6502_settings.json
 
 *.egg
 *.egg-info
