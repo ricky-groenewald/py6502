@@ -62,9 +62,7 @@ wrong here, every later release pays for it.
 - [#3](https://github.com/ricky-groenewald/py6502/issues/3) — 6502: Better code comments
 - [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
 - [#38](https://github.com/ricky-groenewald/py6502/issues/38) — Recover ~20% clock-loop throughput lost to except * overhead
-- [#41](https://github.com/ricky-groenewald/py6502/issues/41) — Configurable preset options in system selector
 - [#42](https://github.com/ricky-groenewald/py6502/issues/42) — Address-based binary loading in custom system builder
-- [#44](https://github.com/ricky-groenewald/py6502/issues/44) — Persist custom system configs as YAML for reuse and auto-load
 - [#45](https://github.com/ricky-groenewald/py6502/issues/45) — Decouple sim cycle pacing from UI frame rate
 
 **Explicit non-goals for v0.1.**
