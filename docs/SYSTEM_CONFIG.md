@@ -100,6 +100,7 @@ component's `bus` field.
 | `buses`       | dict[str,BusSpec]| no       | see §3.3| Bus topology. v0.1 defaults to a single `main` bus.                       |
 | `author`      | string           | no       | `null`  | Credit field for user-shared configs.                                     |
 | `tags`        | list[string]     | no       | `[]`    | Free-form tags for UI filtering.                                          |
+| `options`     | list[OptionSpec] | no       | `[]`    | User-selectable preset options. See [§3.8](#38-options).                  |
 
 ### 3.2 `cpu`
 
@@ -233,6 +234,59 @@ timers, RTCs, anything that's not display/input/audio).
 
 v0.1 doesn't use either; they exist for forward-compatibility with v0.2.
 
+### 3.8 `options`
+
+`options` is a list of user-selectable preset options. Each option
+declares a **target path** into the rest of the config that the loader
+writes the selected value to, immediately after the YAML is parsed and
+before any other validation runs. This means the rest of the schema
+sees the resolved values — options are purely a preset-authoring
+convenience, not a separate runtime shape.
+
+```yaml
+options:
+  - id: ram_size
+    label: RAM size
+    kind: enum
+    target: memory[RAM].size
+    default: 0x1000
+    choices:
+      - { value: 0x1000, label: "4 KiB" }
+      - { value: 0x2000, label: "8 KiB" }
+```
+
+| Field         | Type           | Required | Description                                                 |
+|---------------|----------------|----------|-------------------------------------------------------------|
+| `id`          | string         | yes      | Must match `[a-z0-9_]+`. Unique within the options list.    |
+| `label`       | string         | yes      | Human-readable label shown next to the widget in the UI.    |
+| `kind`        | string         | yes      | One of `enum`, `int`, `hex`, `bool`.                        |
+| `target`      | string         | yes      | Dotted/bracketed path into the config. See below.           |
+| `default`     | any            | yes      | Used when no user value is supplied. Validated vs. `kind`.  |
+| `choices`     | list           | enum     | `[{value, label}, …]`. Required and non-empty when `kind: enum`. |
+| `min` / `max` | int            | no       | Bounds for `int` / `hex` kinds.                             |
+| `description` | string         | no       | Short help text rendered under the widget.                  |
+
+**Target path grammar** (strict — no general expression engine):
+
+| Shape                                  | Example                     |
+|----------------------------------------|-----------------------------|
+| `cpu.<field>`                          | `cpu.hz`                    |
+| `memory[<name>].<field>`               | `memory[RAM].size`          |
+| `display.<field>` / `display.params.<key>` | `display.params.fg_color` |
+| `inputs[<idx>].<field>` / `inputs[<idx>].params.<key>` | `inputs[0].address` |
+| `audio.<field>` / `audio.params.<key>` | `audio.params.volume` (v0.2+) |
+| `other[<idx>].<field>` / `other[<idx>].params.<key>` | `other[0].address` (v0.2+) |
+
+Memory regions are addressed by their unique `name` (Rule 5 already
+enforces uniqueness). Component lists are addressed by index. Missing
+intermediate `params` (or any other dict) along the path is auto-
+created — writing to `display.params.fg_color` works even if the
+`display` block doesn't declare a `params:` key.
+
+Values are validated against the option's `kind` at load time: `enum`
+values must be one of the declared choices, `int` / `hex` values honour
+`min` / `max`, `bool` values must be booleans. See Rule 12 below.
+
 ---
 
 ## 4. Source URIs
@@ -338,10 +392,8 @@ A user can save a preset + their custom edits as a new user config.
 
 ### v0.1 preset list
 
-- `apple1.yaml` — original 4K Apple I with wozmon
-
-Additional presets (`apple_i_8k`, `custom_6502`, …) land as the
-system-selector dialog fills out.
+- `apple1.yaml` — the original Apple I with wozmon, RAM size
+  selectable (4 KiB / 8 KiB) via the `ram_size` option.
 
 ---
 
@@ -368,6 +420,12 @@ the load with a clear error message pointing at the offending line.
     `file:` paths (relative to the config's dir) must exist.
 11. **Source size fits.** For each memory region with a `source`, the
     source file size must be `<= region.size - load_offset`.
+12. **Option targets resolve.** For every entry in `options:`, the
+    declared `target:` path must resolve into the raw config (region
+    name exists, list index in range, intermediate mappings are dicts
+    rather than scalars). Option values must satisfy their declared
+    `kind` / `choices` / `min` / `max`. Unknown option ids in a user-
+    supplied values dict also fail this rule.
 
 Validation failures raise `py6502.sim.system.ConfigError` with a message
 of the form:
@@ -416,6 +474,23 @@ class ComponentSpec:
     params: dict = field(default_factory=dict)
 
 @dataclass(frozen=True)
+class OptionChoice:
+    value: object
+    label: str
+
+@dataclass(frozen=True)
+class OptionSpec:
+    id: str
+    label: str
+    kind: str                                 # "enum" | "int" | "hex" | "bool"
+    target: str                               # see §3.8
+    default: object
+    choices: tuple[OptionChoice, ...] = ()
+    min: Optional[int] = None
+    max: Optional[int] = None
+    description: Optional[str] = None
+
+@dataclass(frozen=True)
 class SystemConfig:
     version: int
     id: str
@@ -430,6 +505,7 @@ class SystemConfig:
     other: tuple[ComponentSpec, ...] = ()
     author: Optional[str] = None
     tags: tuple[str, ...] = ()
+    options: tuple[OptionSpec, ...] = ()
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> "SystemConfig": ...
@@ -542,14 +618,24 @@ The canonical preset shipped with py6502. Annotated for clarity.
 
 ```yaml
 version: 1
-id: apple_i_4k
-name: Apple I (4K)
+id: apple_i
+name: Apple I
 description: |
-  The original Apple I from 1976: 1 MHz 6502, 4 KiB RAM, Apple I
+  The original Apple I from 1976: 1 MHz 6502, configurable RAM, Apple I
   interface I/O chip at $D010-$D013, and Steve Wozniak's monitor
   program (wozmon) in ROM at $FF00-$FFFF.
 author: py6502
 tags: [apple, 1976, homebrew]
+
+options:
+  - id: ram_size
+    label: RAM size
+    kind: enum
+    target: memory[RAM].size
+    default: 0x1000
+    choices:
+      - { value: 0x1000, label: "4 KiB" }
+      - { value: 0x2000, label: "8 KiB" }
 
 cpu:
   type: MOS6502
@@ -558,7 +644,7 @@ cpu:
 memory:
   - name: RAM
     start: 0x0000
-    size: 0x1000        # 4 KiB
+    size: 0x1000        # overwritten by ram_size option
 
   - name: ROM
     start: 0xFF00
