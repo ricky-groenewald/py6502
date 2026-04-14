@@ -127,13 +127,6 @@ class Py6502App:
         self.settings.last_option_values[yaml_path] = dict(option_values)
         save_settings(self.settings)
 
-    def _load_system_from_instance(self, system: System, name: str = "") -> None:
-        """Wire a pre-built System into the UI (used by custom system builder)."""
-        self._wire_system(system, name)
-        # Custom systems have no persistent path
-        self.settings.last_system_path = None
-        save_settings(self.settings)
-
     def _wire_system(self, system: System, name: str = "") -> None:
         """Common setup after a System is constructed."""
         self.system = system

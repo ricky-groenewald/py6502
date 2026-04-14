@@ -1,6 +1,8 @@
 """System selector modal — choose a preset, user YAML, or build a custom system."""
 from __future__ import annotations
 
+import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import dearpygui.dearpygui as dpg
@@ -12,7 +14,9 @@ from py6502.sim.system import (
     OptionSpec,
     System,
     SystemConfig,
+    write_yaml_file,
 )
+from py6502.ui.utils import paths
 from py6502.ui.utils.presets import discover_presets, load_user_config_metadata
 from py6502.ui.utils.settings import save_settings
 
@@ -26,6 +30,44 @@ USER_GROUP_TAG = "SystemSelectorUserGroup"
 RIGHT_PANE_TAG = "SystemSelectorRightPane"
 INFO_PANE_TAG = "SystemSelectorInfoPane"
 FILE_DIALOG_TAG = "SystemSelectorFileDialog"
+
+_SLUG_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def _slugify(name: str) -> str:
+    slug = _SLUG_RE.sub("_", name.strip().lower()).strip("_")
+    return slug or "custom"
+
+
+def _format_hz(hz: int) -> str:
+    if hz >= 1_000_000:
+        mhz = hz / 1_000_000
+        return f"{mhz:g} MHz"
+    if hz >= 1_000:
+        khz = hz / 1_000
+        return f"{khz:g} kHz"
+    return f"{hz} Hz"
+
+
+def _format_bytes(n: int) -> str:
+    if n >= 1024:
+        kib = n / 1024
+        return f"{kib:g} KiB"
+    return f"{n} B"
+
+
+def _unique_config_path(directory, slug: str):
+    """Return ``directory/{slug}.yaml``, appending ``-2``, ``-3``, ... on collision."""
+    candidate = directory / f"{slug}.yaml"
+    if not candidate.exists():
+        return candidate
+    n = 2
+    while True:
+        candidate = directory / f"{slug}-{n}.yaml"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
 
 CUSTOM_FORM_TAG = "CustomSystemForm"
 CUSTOM_NAME_TAG = "CustomSystemName"
@@ -55,7 +97,7 @@ class SystemSelectorWindow:
     def build(self) -> None:
         with dpg.window(
             label="New System",
-            width=820, height=520,
+            width=920, height=520,
             show=False, no_resize=True,
             tag=WINDOW_TAG,
         ):
@@ -298,16 +340,52 @@ class SystemSelectorWindow:
             dpg.add_text(meta["name"], parent=INFO_PANE_TAG, color=(100, 200, 255))
             dpg.add_separator(parent=INFO_PANE_TAG)
             if meta["description"]:
-                dpg.add_text(meta["description"].strip(), parent=INFO_PANE_TAG, wrap=480)
+                dpg.add_text(meta["description"].strip(), parent=INFO_PANE_TAG, wrap=600)
             if meta["author"]:
                 dpg.add_spacer(parent=INFO_PANE_TAG, height=8)
                 dpg.add_text(f"Author: {meta['author']}", parent=INFO_PANE_TAG, color=(180, 180, 180))
             if meta["tags"]:
                 tags_str = ", ".join(str(t) for t in meta["tags"])
                 dpg.add_text(f"Tags: {tags_str}", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            if not meta.get("is_preset", False):
+                self._render_file_line(path)
+                config = meta.get("config")
+                if config is not None:
+                    self._render_hardware_summary(config)
             options = meta.get("options", ())
             if options:
                 self._render_options(path, options)
+
+    def _render_file_line(self, path: str) -> None:
+        dpg.add_spacer(parent=INFO_PANE_TAG, height=8)
+        dpg.add_text(f"File: {path}", parent=INFO_PANE_TAG, color=(180, 180, 180), wrap=600)
+
+    def _render_hardware_summary(self, config: SystemConfig) -> None:
+        dpg.add_spacer(parent=INFO_PANE_TAG, height=4)
+        dpg.add_text(
+            f"CPU: {config.cpu.type} @ {_format_hz(config.cpu.hz)}",
+            parent=INFO_PANE_TAG, color=(180, 180, 180),
+        )
+        dpg.add_text("Memory:", parent=INFO_PANE_TAG, color=(180, 180, 180))
+        for region in config.memory:
+            end = region.start + region.size - 1
+            tag = " [ROM]" if region.read_only else ""
+            src = f"  ← {Path(region.source).name}" if region.source else ""
+            dpg.add_text(
+                f"  {region.name}  0x{region.start:04X}-0x{end:04X}  "
+                f"({_format_bytes(region.size)}){tag}{src}",
+                parent=INFO_PANE_TAG, color=(180, 180, 180),
+            )
+        if config.display is not None:
+            dpg.add_text(
+                f"Display: {config.display.type} @ 0x{config.display.address:04X}",
+                parent=INFO_PANE_TAG, color=(180, 180, 180),
+            )
+        for spec in config.inputs:
+            dpg.add_text(
+                f"Input:   {spec.type} @ 0x{spec.address:04X}",
+                parent=INFO_PANE_TAG, color=(180, 180, 180),
+            )
 
     def _render_options(self, path: str, options: tuple[OptionSpec, ...]) -> None:
         """Render a widget per preset option; user changes update self._option_values."""
@@ -364,7 +442,7 @@ class SystemSelectorWindow:
                         user_data=(path, opt),
                     )
             if opt.description:
-                dpg.add_text(f"  {opt.description}", parent=INFO_PANE_TAG, color=(150, 150, 150), wrap=440)
+                dpg.add_text(f"  {opt.description}", parent=INFO_PANE_TAG, color=(150, 150, 150), wrap=560)
 
     def _on_enum_option_changed(self, sender: int, app_data: str, user_data: tuple) -> None:
         path, opt = user_data
@@ -432,8 +510,9 @@ class SystemSelectorWindow:
         if inputs is False:
             return
 
+        slug = _slugify(name)
         config = SystemConfig(
-            version=1, id="custom", name=name,
+            version=1, id=slug, name=name,
             description="Custom system configuration",
             cpu=CpuSpec(type="MOS6502", hz=cpu_hz),
             memory=tuple(memory),
@@ -441,14 +520,27 @@ class SystemSelectorWindow:
             inputs=tuple(inputs) if inputs else (),
         )
 
+        # Validate by constructing once before writing to disk.
         try:
-            system = System(config)
+            System(config)
         except Exception as exc:
             self._set_status(str(exc), error=True)
             return
 
+        target = _unique_config_path(paths.user_configs_dir(), slug)
+        try:
+            write_yaml_file(config, target)
+        except OSError as exc:
+            self._set_status(f"Could not save config: {exc}", error=True)
+            return
+
+        target_str = str(target)
+        if target_str not in self._app.settings.user_config_paths:
+            self._app.settings.user_config_paths.append(target_str)
+            save_settings(self._app.settings)
+
         dpg.hide_item(WINDOW_TAG)
-        self._app._load_system_from_instance(system, name)
+        self._app._load_system(target_str)
 
     def _collect_regions(self) -> list[MemoryRegion] | None:
         regions: list[MemoryRegion] = []
