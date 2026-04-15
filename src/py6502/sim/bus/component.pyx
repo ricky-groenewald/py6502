@@ -38,7 +38,7 @@ cdef class Component:
         return self._size
 
     # Abstract class
-    cdef unsigned char read(self, unsigned short address) except *:
+    cdef int read(self, unsigned short address) except -1:
         """
         SHOULD NOT BE ACCESSED PUBLICLY
 
@@ -48,12 +48,16 @@ cdef class Component:
             - address (unsigned short)
 
         Returns:
-            Byte value of the data at the specified address
+            Byte value (0-255) of the data at the specified address.
+            Declared `cdef int ... except -1` so Cython can propagate
+            exceptions via a cheap cmp-against-sentinel rather than a
+            per-call PyErr_Occurred() — the happy-path return is always
+            in [0, 255] and -1 is reserved as the error sentinel.
         """
         raise NotImplementedError("Subclass must implement this method")
 
     # Abstract class
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
         """
         SHOULD NOT BE ACCESSED PUBLICLY
 
@@ -64,7 +68,12 @@ cdef class Component:
             - data (unsigned char)
 
         Returns:
-            Byte value of the data written to the address
+            The byte value (0-255) that was written — subclasses
+            should return `data` on success to preserve the bus-line
+            contract. Declared `cdef int ... except -1` so Cython
+            can propagate exceptions via a cheap cmp-against-sentinel
+            on the hot path (the happy-path return is always in
+            [0, 255] and -1 is reserved as the error sentinel).
         """
         raise NotImplementedError("Subclass must implement this method")
 

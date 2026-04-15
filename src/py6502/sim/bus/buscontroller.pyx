@@ -136,14 +136,11 @@ cdef class BusController(Component):
     # Bounds checking disabled since short address is always within bus controller's address range
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char read(self, unsigned short address) except *:
+    cdef int read(self, unsigned short address) except -1:
         cdef MappedAddress mapped_address = self._component_address_map[address]
 
         self._current_bus_address = address
-        try:
-            self._current_bus_data = (<Component>mapped_address.component).read(mapped_address.internal_address)
-        except UnallocatedAddressError:
-            raise
+        self._current_bus_data = <unsigned char>(<Component>mapped_address.component).read(mapped_address.internal_address)
         self._current_bus_read_write_bar = 1
 
         return self._current_bus_data
@@ -152,14 +149,11 @@ cdef class BusController(Component):
     # Bounds checking disabled since short address is always within bus controller's address range
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
         cdef MappedAddress mapped_address = self._component_address_map[address]
 
         self._current_bus_address = address
-        try:
-            self._current_bus_data = (<Component>mapped_address.component).write(mapped_address.internal_address, data)
-        except UnallocatedAddressError:
-            raise
+        self._current_bus_data = <unsigned char>(<Component>mapped_address.component).write(mapped_address.internal_address, data)
         self._current_bus_read_write_bar = 0
 
         return self._current_bus_data
