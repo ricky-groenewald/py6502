@@ -6,8 +6,8 @@ cdef class Apple1Keyboard(Component):
     cdef unsigned char _kbd_buffer_current_index
     cdef unsigned char _kbd_buffer_last_index
 
-    cdef unsigned char read(self, unsigned short address) except *
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *
+    cdef int read(self, unsigned short address) except -1
+    cdef int write(self, unsigned short address, unsigned char data) except -1
     cdef bint add_character_to_kb_buffer(self, unsigned char char_)
     cdef void clear_kbd_buffer(self)
     cdef bint send_input(self, unsigned char char_)

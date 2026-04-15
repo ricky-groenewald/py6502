@@ -26,7 +26,7 @@ cdef class EmptyAddress(Component):
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char read(self, unsigned short address) except *:
+    cdef int read(self, unsigned short address) except -1:
         if self._raise_on_unmapped:
             raise UnallocatedAddressError(
                 f'Address not allocated to a component: 0x{address:04X}'
@@ -35,7 +35,7 @@ cdef class EmptyAddress(Component):
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
         if self._raise_on_unmapped:
             raise UnallocatedAddressError(
                 f'Address not allocated to a component: 0x{address:04X}'

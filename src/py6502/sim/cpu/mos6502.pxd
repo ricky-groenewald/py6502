@@ -3,7 +3,7 @@ CYTHON MOS6502 PROCESSOR CLASS DECLARATIONS
 """
 from py6502.sim.bus.component cimport Component
 
-ctypedef void (*instruction_func)(MOS6502) except *
+ctypedef int (*instruction_func)(MOS6502) except -1
 
 cdef struct Registers:
     unsigned char OPCODE # Not a real register, but used for debugging
@@ -49,84 +49,101 @@ cdef class MOS6502:
     cdef void set_registers(self, Registers registers)
 
     # Control Functions
-    cdef void clock(self) except *
+    cdef int clock(self) except -1
     cdef void send_reset(self)
     cdef void send_irq(self)
     cdef void send_nmi(self)
-    cdef void load_op_code(self) except *
+    cdef int load_op_code(self) except -1
     cdef void set_memory_bus(self, Component memory_bus)
     cdef void set_invalid_opcode_mode(self, unsigned char mode)
     cdef void clear_bcd_opcodes(self)
     cdef void set_bcd_opcodes(self)
 
     # Addressing Modes
-    cdef void absolute(self)
-    cdef void absolute_x(self)
-    cdef void absolute_y(self)
-    cdef void accumulator(self)
-    cdef void immediate(self) # Also handles relative addressing
-    cdef void implied(self)
-    cdef void indirect(self)
-    cdef void indirect_x(self)
-    cdef void indirect_y(self)
-    cdef void zero_page(self)
-    cdef void zero_page_x(self)
-    cdef void zero_page_y(self)
+    cdef int absolute(self) except -1
+    cdef int absolute_x(self) except -1
+    cdef int absolute_y(self) except -1
+    cdef int accumulator(self) except -1
+    cdef int immediate(self) except -1 # Also handles relative addressing
+    cdef int implied(self) except -1
+    cdef int indirect(self) except -1
+    cdef int indirect_x(self) except -1
+    cdef int indirect_y(self) except -1
+    cdef int zero_page(self) except -1
+    cdef int zero_page_x(self) except -1
+    cdef int zero_page_y(self) except -1
 
     # # Opcode functions
-    cdef void ADC_SBC(self)
-    cdef void ADC_SBC_BCD(self)
-    cdef void AND(self)
-    cdef void ASL(self)
-    cdef void BCC(self)
-    cdef void BCS(self)
-    cdef void BEQ(self)
-    cdef void BIT(self)
-    cdef void BMI(self)
-    cdef void BNE(self)
-    cdef void BPL(self)
-    cdef void BRK(self)
-    cdef void BVC(self)
-    cdef void BVS(self)
-    cdef void CLC(self)
-    cdef void CLD(self)
-    cdef void CLI(self)
-    cdef void CLV(self)
-    cdef void CMP(self)
-    cdef void CPX(self)
-    cdef void CPY(self)
-    cdef void DEC(self)
-    cdef void DEX(self)
-    cdef void DEY(self)
-    cdef void EOR(self)
-    cdef void INC(self)
-    cdef void INX(self)
-    cdef void INY(self)
-    cdef void JMP(self)
-    cdef void JSR(self)
-    cdef void LDA(self)
-    cdef void LDX(self)
-    cdef void LDY(self)
-    cdef void LSR(self)
-    cdef void NOP(self)
-    cdef void ORA(self)
-    cdef void PHA(self)
-    cdef void PHP(self)
-    cdef void PLA(self)
-    cdef void PLP(self)
-    cdef void ROL(self)
-    cdef void ROR(self)
-    cdef void RTI(self)
-    cdef void RTS(self)
-    cdef void SEC(self)
-    cdef void SED(self)
-    cdef void SEI(self)
-    cdef void STA(self)
-    cdef void STX(self)
-    cdef void STY(self)
-    cdef void TAX(self)
-    cdef void TAY(self)
-    cdef void TSX(self)
-    cdef void TXA(self)
-    cdef void TXS(self)
-    cdef void TYA(self)
+    cdef int ADC_SBC(self) except -1
+    cdef int ADC_SBC_BCD(self) except -1
+    cdef int AND(self) except -1
+    cdef int ASL(self) except -1
+    cdef int BCC(self) except -1
+    cdef int BCS(self) except -1
+    cdef int BEQ(self) except -1
+    cdef int BIT(self) except -1
+    cdef int BMI(self) except -1
+    cdef int BNE(self) except -1
+    cdef int BPL(self) except -1
+    cdef int BRK(self) except -1
+    cdef int BVC(self) except -1
+    cdef int BVS(self) except -1
+    cdef int CLC(self) except -1
+    cdef int CLD(self) except -1
+    cdef int CLI(self) except -1
+    cdef int CLV(self) except -1
+    cdef int CMP(self) except -1
+    cdef int CPX(self) except -1
+    cdef int CPY(self) except -1
+    cdef int DEC(self) except -1
+    cdef int DEX(self) except -1
+    cdef int DEY(self) except -1
+    cdef int EOR(self) except -1
+    cdef int INC(self) except -1
+    cdef int INX(self) except -1
+    cdef int INY(self) except -1
+    cdef int JMP(self) except -1
+    cdef int JSR(self) except -1
+    cdef int LDA(self) except -1
+    cdef int LDX(self) except -1
+    cdef int LDY(self) except -1
+    cdef int LSR(self) except -1
+    cdef int NOP(self) except -1
+    cdef int ORA(self) except -1
+    cdef int PHA(self) except -1
+    cdef int PHP(self) except -1
+    cdef int PLA(self) except -1
+    cdef int PLP(self) except -1
+    cdef int ROL(self) except -1
+    cdef int ROR(self) except -1
+    cdef int RTI(self) except -1
+    cdef int RTS(self) except -1
+    cdef int SEC(self) except -1
+    cdef int SED(self) except -1
+    cdef int SEI(self) except -1
+    cdef int STA(self) except -1
+    cdef int STX(self) except -1
+    cdef int STY(self) except -1
+    cdef int TAX(self) except -1
+    cdef int TAY(self) except -1
+    cdef int TSX(self) except -1
+    cdef int TXA(self) except -1
+    cdef int TXS(self) except -1
+    cdef int TYA(self) except -1
+
+
+# Module-level inline step helper. Body lives in the pxd so the C compiler
+# can fold it into any module that cimports it (notably
+# BusController.run_cycles) under -O3 -flto — this is Cython's standard
+# idiom for cross-module inlining and is what removes the remaining
+# per-cycle call frame. MOS6502.clock() delegates to this so external
+# callers (BusController.clock, tests, single-step debugger) see the
+# same behaviour through the regular method.
+cdef inline int _mos6502_step(MOS6502 processor) except -1:
+    if processor._current_instruction:
+        processor._current_instruction(processor)
+    else:
+        # Always increment PC if no instruction is loaded
+        processor._registers.PC += 1
+        processor.load_op_code()
+    return 0

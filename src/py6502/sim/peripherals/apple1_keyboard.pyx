@@ -55,7 +55,7 @@ cdef class Apple1Keyboard(Component):
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char read(self, unsigned short address) except *:
+    cdef int read(self, unsigned short address) except -1:
         if address == KBDCR and self._kbd_buffer_last_index != (self._kbd_buffer_current_index + 1) % KBD_BUFFER_SIZE:
             return 0x80
         if address == KBD and self._kbd_buffer_last_index != (self._kbd_buffer_current_index + 1) % KBD_BUFFER_SIZE:
@@ -65,5 +65,5 @@ cdef class Apple1Keyboard(Component):
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
         return data

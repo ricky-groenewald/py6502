@@ -14,3 +14,8 @@ py6502_settings.json
 *venv*/
 
 .claude/settings.local.json
+
+# Local profiling artefacts (sample, xctrace, cython -a HTML)
+profiles/
+*.trace
+*_annotated.html

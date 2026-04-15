@@ -7,8 +7,8 @@ cdef class Component:
     cdef str _name
     cdef inline str get_name(self)
     cdef inline unsigned int get_size(self)
-    cdef unsigned char read(self, unsigned short address) except *
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *
+    cdef int read(self, unsigned short address) except -1
+    cdef int write(self, unsigned short address, unsigned char data) except -1
     cdef void bind(self, object system)
     cdef void on_cycles_elapsed(self, unsigned long n)
     cdef list get_framebuffer(self)

@@ -46,14 +46,14 @@ cdef class Apple1Display(Component):
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char read(self, unsigned short address) except *:
+    cdef int read(self, unsigned short address) except -1:
         if address == DSP:
             return DSP_BUSY if self._busy_remaining > 0 else 0x00
         return 0x00
 
     @boundscheck(False)
     @wraparound(False)
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
         cdef unsigned char stripped
         if address == DSP and self._busy_remaining <= 0:
             stripped = data & 0x7F
