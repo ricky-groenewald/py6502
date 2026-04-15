@@ -92,9 +92,12 @@ cdef class BusController(Component):
         """
         self._tick_hooks.append(component)
 
-    cdef void clock(self) except *:
+    cdef int clock(self) except -1:
         self._processor.clock()
+        return 0
 
+    @boundscheck(False)
+    @wraparound(False)
     cdef void run_cycles(self, unsigned long cycles) except *:
         cdef Py_ssize_t hook_idx
         cdef Py_ssize_t hook_count

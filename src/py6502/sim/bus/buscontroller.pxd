@@ -33,7 +33,7 @@ cdef class BusController(Component):
     cdef int read(self, unsigned short address) except -1
     cdef int write(self, unsigned short address, unsigned char data) except -1
 
-    cdef void clock(self) except *
+    cdef int clock(self) except -1
     cdef void run_cycles(self, unsigned long cycles) except *
     cdef void run_for_microseconds(self, unsigned long microseconds, unsigned long cpu_hz) except *
 
