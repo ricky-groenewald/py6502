@@ -8,7 +8,7 @@ from cython cimport boundscheck, wraparound
 from py6502.sim.bus.component cimport Component
 from py6502.sim.bus.emptyaddress cimport EmptyAddress
 from py6502.sim.bus.emptyaddress import UnallocatedAddressError
-from py6502.sim.cpu.mos6502 cimport MOS6502, Registers
+from py6502.sim.cpu.mos6502 cimport MOS6502, Registers, _mos6502_step
 
 class ComponentSizeError(Exception):
     """
@@ -101,8 +101,9 @@ cdef class BusController(Component):
     cdef void run_cycles(self, unsigned long cycles) except *:
         cdef Py_ssize_t hook_idx
         cdef Py_ssize_t hook_count
+        cdef MOS6502 processor = self._processor
         for _ in range(cycles):
-            self._processor.clock()
+            _mos6502_step(processor)
         hook_count = len(self._tick_hooks)
         for hook_idx in range(hook_count):
             (<Component>self._tick_hooks[hook_idx]).on_cycles_elapsed(cycles)

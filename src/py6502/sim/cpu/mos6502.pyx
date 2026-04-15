@@ -279,13 +279,12 @@ cdef class MOS6502:
     #   CONTROL FUNCTIONS
     ###
     cdef int clock(self) except -1:
-        if self._current_instruction:
-            self._current_instruction(self)
-        else:
-            # Always increment PC if no instruction is loaded
-            self._registers.PC += 1
-            self.load_op_code()
-        return 0
+        # Non-inline entry retained for external callers
+        # (BusController.clock, tests, single-step debugger). The hot
+        # path in BusController.run_cycles calls `_mos6502_step` directly
+        # so the body can be inlined under -flto. See mos6502.pxd for
+        # the helper.
+        return _mos6502_step(self)
 
     cdef void send_reset(self):
         # Stop everthing and reset the processor

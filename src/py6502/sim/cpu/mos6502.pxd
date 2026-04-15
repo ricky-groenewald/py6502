@@ -130,3 +130,20 @@ cdef class MOS6502:
     cdef int TXA(self) except -1
     cdef int TXS(self) except -1
     cdef int TYA(self) except -1
+
+
+# Module-level inline step helper. Body lives in the pxd so the C compiler
+# can fold it into any module that cimports it (notably
+# BusController.run_cycles) under -O3 -flto — this is Cython's standard
+# idiom for cross-module inlining and is what removes the remaining
+# per-cycle call frame. MOS6502.clock() delegates to this so external
+# callers (BusController.clock, tests, single-step debugger) see the
+# same behaviour through the regular method.
+cdef inline int _mos6502_step(MOS6502 processor) except -1:
+    if processor._current_instruction:
+        processor._current_instruction(processor)
+    else:
+        # Always increment PC if no instruction is loaded
+        processor._registers.PC += 1
+        processor.load_op_code()
+    return 0
