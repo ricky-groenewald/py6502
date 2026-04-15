@@ -61,9 +61,10 @@ wrong here, every later release pays for it.
 
 - [#3](https://github.com/ricky-groenewald/py6502/issues/3) — 6502: Better code comments
 - [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
-- [#38](https://github.com/ricky-groenewald/py6502/issues/38) — Recover ~20% clock-loop throughput lost to except * overhead
 - [#42](https://github.com/ricky-groenewald/py6502/issues/42) — Address-based binary loading in custom system builder
-- [#45](https://github.com/ricky-groenewald/py6502/issues/45) — Decouple sim cycle pacing from UI frame rate
+- [#49](https://github.com/ricky-groenewald/py6502/issues/49) — Apple1Display DSP busy timer hardcoded to 1 MHz
+- [#50](https://github.com/ricky-groenewald/py6502/issues/50) — Wire Klaus + Bruce Clark tests into pytest with perf reporting
+- [#51](https://github.com/ricky-groenewald/py6502/issues/51) — Binary source picker: filesystem vs bundled assets, backed by an asset manifest
 
 **Explicit non-goals for v0.1.**
 
