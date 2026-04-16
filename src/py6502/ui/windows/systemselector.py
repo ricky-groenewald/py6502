@@ -18,10 +18,12 @@ from py6502.sim.system import (
     to_yaml_text,
     write_yaml_file,
 )
+from py6502.sim.manifest import BinaryAsset
 from py6502.sim.system.loader import from_yaml_text
 from py6502.ui.utils import paths
 from py6502.ui.utils.presets import discover_presets, load_user_config_metadata
 from py6502.ui.utils.settings import save_settings
+from py6502.ui.widgets import BinarySourcePicker
 
 if TYPE_CHECKING:
     from py6502.ui.app import Py6502App
@@ -84,7 +86,6 @@ CUSTOM_DISPLAY_ADDR_TAG = "CustomSystemDisplayAddr"
 CUSTOM_INPUT_TAG = "CustomSystemInput"
 CUSTOM_INPUT_ADDR_TAG = "CustomSystemInputAddr"
 CUSTOM_STATUS_TAG = "CustomSystemStatus"
-SOURCE_FILE_DIALOG_TAG = "CustomSystemSourceFileDialog"
 
 
 class SystemSelectorWindow:
@@ -97,7 +98,7 @@ class SystemSelectorWindow:
         self._region_ids: list[int] = []
         self._binary_counter = 0
         self._binary_ids: list[int] = []
-        self._source_dialog_target: int | None = None
+        self._binary_pickers: dict[int, BinarySourcePicker] = {}
         # Per-preset option selections, keyed by preset path. Persists across
         # re-selects so the user's picks stick if they navigate away and back.
         self._option_values: dict[str, dict[str, object]] = {}
@@ -138,15 +139,6 @@ class SystemSelectorWindow:
         ):
             dpg.add_file_extension(".yaml", color=(0, 255, 0, 255))
             dpg.add_file_extension(".yml", color=(0, 255, 0, 255))
-
-        with dpg.file_dialog(
-            directory_selector=False, show=False,
-            callback=self._on_source_file_selected, tag=SOURCE_FILE_DIALOG_TAG,
-            width=700, height=400,
-        ):
-            dpg.add_file_extension(".bin", color=(0, 255, 0, 255))
-            dpg.add_file_extension(".rom", color=(0, 255, 0, 255))
-            dpg.add_file_extension(".*")
 
         with dpg.window(
             label="Remove user config",
@@ -278,26 +270,26 @@ class SystemSelectorWindow:
             self._region_ids.remove(rid)
             dpg.delete_item(f"CustomRegion_{rid}")
 
-    def _add_binary(self, path: str = "", address: str = "0000") -> None:
+    def _add_binary(self) -> None:
         bid = self._binary_counter
         self._binary_counter += 1
         self._binary_ids.append(bid)
 
+        picker = BinarySourcePicker(
+            f"CustomBinary{bid}_",
+            path_width=220,
+            combo_width=180,
+            desc_wrap=380,
+            on_asset_selected=lambda asset, _bid=bid: self._prefill_binary_address(_bid, asset),
+        )
+        self._binary_pickers[bid] = picker
+
         with dpg.group(tag=f"CustomBinary_{bid}", parent=CUSTOM_BINARIES_TAG):
+            picker.build()
             with dpg.group(horizontal=True):
-                dpg.add_input_text(
-                    tag=f"BinarySource_{bid}", readonly=True,
-                    default_value=path,
-                    width=260, hint="Binary file",
-                )
-                dpg.add_button(
-                    label="Browse...",
-                    callback=lambda s, a, u: self._browse_source(u),
-                    user_data=bid,
-                )
                 dpg.add_text(" @ 0x")
                 dpg.add_input_text(
-                    tag=f"BinaryAddr_{bid}", default_value=address,
+                    tag=f"BinaryAddr_{bid}", default_value="0000",
                     width=60, uppercase=True, hexadecimal=True, no_spaces=True,
                 )
                 dpg.add_button(
@@ -305,20 +297,19 @@ class SystemSelectorWindow:
                     callback=lambda s, a, u: self._remove_binary(u),
                     user_data=bid,
                 )
+            dpg.add_separator()
+
+    def _prefill_binary_address(self, bid: int, asset: BinaryAsset) -> None:
+        if dpg.does_item_exist(f"BinaryAddr_{bid}"):
+            dpg.set_value(f"BinaryAddr_{bid}", f"{asset.default_address:04X}")
 
     def _remove_binary(self, bid: int) -> None:
         if bid in self._binary_ids:
+            picker = self._binary_pickers.pop(bid, None)
+            if picker is not None:
+                picker.destroy()
             self._binary_ids.remove(bid)
             dpg.delete_item(f"CustomBinary_{bid}")
-
-    def _browse_source(self, bid: int) -> None:
-        self._source_dialog_target = bid
-        dpg.show_item(SOURCE_FILE_DIALOG_TAG)
-
-    def _on_source_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
-        file_path = app_data.get("file_path_name", "")
-        if file_path and self._source_dialog_target is not None:
-            dpg.set_value(f"BinarySource_{self._source_dialog_target}", file_path)
 
     def _reset_custom_form(self) -> None:
         for rid in list(self._region_ids):
@@ -656,16 +647,17 @@ class SystemSelectorWindow:
     def _collect_binaries(self) -> tuple[BinarySource, ...] | None:
         out: list[BinarySource] = []
         for bid in self._binary_ids:
-            path = dpg.get_value(f"BinarySource_{bid}").strip()
-            if not path:
+            picker = self._binary_pickers[bid]
+            if picker.is_empty():
                 self._set_status("A binary source has no file selected", error=True)
                 return None
             try:
                 addr = int(dpg.get_value(f"BinaryAddr_{bid}"), 16)
             except ValueError:
-                self._set_status(f"Invalid hex address for binary '{path}'", error=True)
+                self._set_status("Invalid hex address for a binary", error=True)
                 return None
-            out.append(BinarySource(source=f"file:{path}", address=addr))
+            uri, _prefill = picker.get_source()
+            out.append(BinarySource(source=uri, address=addr))
         return tuple(out)
 
     def _collect_display(self) -> ComponentSpec | None | bool:

@@ -1,45 +1,43 @@
-"""Binary loader dialog — load a .bin/.rom file at an absolute address."""
+"""Binary loader dialog — load a .bin/.rom file (or a bundled asset) at an absolute address."""
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import dearpygui.dearpygui as dpg
+
+from py6502.sim.manifest import BinaryAsset
+from py6502.ui.widgets import BinarySourcePicker
 
 if TYPE_CHECKING:
     from py6502.ui.app import Py6502App
 
 WINDOW_TAG = "BinaryLoaderWindow"
-FILE_PATH_TAG = "BinaryLoaderFilePath"
 ADDRESS_TAG = "BinaryLoaderAddress"
 STATUS_TAG = "BinaryLoaderStatus"
-FILE_DIALOG_TAG = "BinaryLoaderFileDialog"
+PICKER_PREFIX = "BinaryLoaderSource"
 
 
 class BinaryLoaderWindow:
     def __init__(self, app: Py6502App) -> None:
         self._app = app
-        self._file_path: str = ""
+        self._picker = BinarySourcePicker(
+            PICKER_PREFIX,
+            path_width=300,
+            combo_width=200,
+            desc_wrap=420,
+            on_asset_selected=self._on_asset_selected,
+        )
 
     def build(self) -> None:
         with dpg.window(
             label="Load Binary",
             width=500,
-            height=180,
+            height=220,
             show=False,
             tag=WINDOW_TAG,
         ):
-            # File selection row
-            with dpg.group(horizontal=True):
-                dpg.add_input_text(
-                    tag=FILE_PATH_TAG,
-                    readonly=True,
-                    width=380,
-                    hint="No file selected",
-                )
-                dpg.add_button(label="Browse...", callback=self._on_browse)
+            self._picker.build()
 
-            # Address row
             with dpg.group(horizontal=True):
                 dpg.add_text("Address: 0x")
                 dpg.add_input_text(
@@ -51,64 +49,38 @@ class BinaryLoaderWindow:
                     no_spaces=True,
                 )
 
-            # Action buttons
             with dpg.group(horizontal=True):
                 dpg.add_button(label="Load", callback=self._on_load)
                 dpg.add_button(label="Cancel", callback=self._on_cancel)
 
-            # Status text
             dpg.add_text("", tag=STATUS_TAG)
 
-        # File dialog
-        with dpg.file_dialog(
-            directory_selector=False,
-            show=False,
-            callback=self._on_file_selected,
-            tag=FILE_DIALOG_TAG,
-            width=700,
-            height=400,
-        ):
-            dpg.add_file_extension(".bin", color=(0, 255, 0, 255))
-            dpg.add_file_extension(".rom", color=(0, 255, 0, 255))
-            dpg.add_file_extension(".*")
-
     def show(self) -> None:
-        self._file_path = ""
-        dpg.set_value(FILE_PATH_TAG, "")
+        self._picker.reset()
         dpg.set_value(ADDRESS_TAG, "0000")
         dpg.set_value(STATUS_TAG, "")
         dpg.configure_item(STATUS_TAG, color=(255, 255, 255))
         dpg.show_item(WINDOW_TAG)
 
-    # ------------------------------------------------------------------
-    # Callbacks
-    # ------------------------------------------------------------------
-    def _on_browse(self) -> None:
-        dpg.show_item(FILE_DIALOG_TAG)
-
-    def _on_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
-        file_path = app_data.get("file_path_name", "")
-        if file_path:
-            self._file_path = file_path
-            dpg.set_value(FILE_PATH_TAG, file_path)
+    def _on_asset_selected(self, asset: BinaryAsset) -> None:
+        dpg.set_value(ADDRESS_TAG, f"{asset.default_address:04X}")
 
     def _on_load(self) -> None:
         if self._app.system is None:
             return
 
-        if not self._file_path:
-            self._set_status("No file selected", error=True)
+        if self._picker.is_empty():
+            self._set_status("No binary selected", error=True)
             return
 
-        address_str = dpg.get_value(ADDRESS_TAG)
         try:
-            address = int(address_str, 16)
+            address = int(dpg.get_value(ADDRESS_TAG), 16)
         except ValueError:
             self._set_status("Invalid address value", error=True)
             return
 
         try:
-            data = Path(self._file_path).read_bytes()
+            data = self._picker.get_bytes()
             self._app.system.load_binary_at(address, data)
         except Exception as exc:
             self._set_status(str(exc), error=True)

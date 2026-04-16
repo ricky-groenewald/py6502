@@ -64,7 +64,6 @@ wrong here, every later release pays for it.
 - [#3](https://github.com/ricky-groenewald/py6502/issues/3) — 6502: Better code comments
 - [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
 - [#51](https://github.com/ricky-groenewald/py6502/issues/51) — Binary source picker: filesystem vs bundled assets, backed by an asset manifest
-- [#57](https://github.com/ricky-groenewald/py6502/issues/57) — Migrate runtime Load Binary window to address-based model
 
 **Explicit non-goals for v0.1.**
 
