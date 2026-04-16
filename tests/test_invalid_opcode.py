@@ -53,7 +53,7 @@ def system(tmp_path):
 def test_crash_mode_raises_on_invalid_opcode(system) -> None:
     """Default crash mode raises InvalidOPCode during run_cycles."""
     # 0x02 is an undefined 6502 opcode at 0x0200
-    system.load_binary("RAM", 0x0200, bytes([0x02]))
+    system.load_binary_at(0x0200, bytes([0x02]))
 
     with pytest.raises(InvalidOPCode, match="0x02"):
         system.run_cycles(10)
@@ -64,7 +64,7 @@ def test_nop_mode_skips_invalid_opcode(system) -> None:
     system.set_invalid_opcode_mode(0)  # NOP mode
 
     # 0x02 (invalid) followed by NOP NOP
-    system.load_binary("RAM", 0x0200, bytes([0x02, 0xEA, 0xEA]))
+    system.load_binary_at(0x0200, bytes([0x02, 0xEA, 0xEA]))
 
     system.run_cycles(10)
 
@@ -77,8 +77,8 @@ def test_nop_mode_skips_invalid_opcode(system) -> None:
 def test_crash_mode_includes_address_in_message(system) -> None:
     """Crash mode error message includes both opcode and address."""
     # JMP $0300, then invalid opcode at $0300
-    system.load_binary("RAM", 0x0200, bytes([0x4C, 0x00, 0x03]))
-    system.load_binary("RAM", 0x0300, bytes([0x02]))
+    system.load_binary_at(0x0200, bytes([0x4C, 0x00, 0x03]))
+    system.load_binary_at(0x0300, bytes([0x02]))
 
     with pytest.raises(InvalidOPCode, match="0x0300"):
         system.run_cycles(20)

@@ -48,7 +48,7 @@ def test_crash_mode_raises_during_run_cycles(system) -> None:
     system.set_unmapped_memory_mode(True)
 
     # JMP $5000 — CPU will try to fetch from unmapped address
-    system.load_binary("RAM", 0x0200, bytes([0x4C, 0x00, 0x50]))
+    system.load_binary_at(0x0200, bytes([0x4C, 0x00, 0x50]))
     regs = system.get_registers()
     regs["PC"] = 0x0200
     regs["INTERRUPT_TYPE"] = 0

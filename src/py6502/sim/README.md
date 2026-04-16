@@ -46,7 +46,7 @@ from py6502.sim.peripherals import Apple1
    state.
 4. A `System` builds all of the above from a `SystemConfig` (see
    `docs/SYSTEM_CONFIG.md`) and exposes a coarse, frontend-facing API:
-   `run_cycles`, `run_for_microseconds`, `reset`, `load_binary`,
+   `run_cycles`, `run_for_microseconds`, `reset`, `load_binary_at`,
    `get_registers`, `get_framebuffer`. The frontend calls one of these
    once per UI frame.
 

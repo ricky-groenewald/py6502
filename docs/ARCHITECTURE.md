@@ -294,6 +294,7 @@ cdef class System:
     cdef Component _display               # direct ref, avoids string lookups
     cdef list _inputs                     # keyboard-likes, in declared order
     cdef dict _memory_regions             # str → Memory
+    cdef tuple _memory_config             # MemoryRegion tuple, kept for runtime binary loads
 ```
 
 Construction is described in detail in [SYSTEM_CONFIG.md §9](SYSTEM_CONFIG.md#9-how-system-builds-from-a-config).
@@ -308,7 +309,7 @@ cpdef void run_for_microseconds(self, unsigned long microseconds)
 cpdef unsigned long step_cycle(self)       # debug: advance one CPU clock cycle
 cpdef unsigned long step_instruction(self) # debug: advance one full instruction
 cpdef void reset(self)
-cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
+cpdef void load_binary_at(self, unsigned int address, bytes data)
 cpdef Registers get_registers(self)
 cpdef void set_registers(self, Registers registers)
 cpdef object get_framebuffer(self)
@@ -320,10 +321,6 @@ cpdef void set_invalid_opcode_mode(self, unsigned char mode)
 cpdef void set_unmapped_memory_mode(self, bint crash)
 cpdef bint send_key(self, unsigned char char_)
 cpdef void clear_input_buffer(self)
-```
-
-```python
-system.memory_region_names   # property: tuple of configured region names
 ```
 
 `step_cycle` and `step_instruction` are debug-only entry points — not
