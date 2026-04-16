@@ -45,9 +45,11 @@ wrong here, every later release pays for it.
   `System.run_cycles` / `run_for_microseconds`. See `docs/ARCHITECTURE.md`.
 - Abstract display + input peripherals so the Apple I is a *user* of those
   abstractions, not a special case in `System.get_framebuffer`.
-- Pytest fixtures + Klaus Dormann / Bruce Clark functional test suites wired
-  up as a git submodule under `tests/vendor/`, with a performance regression
-  test that fails loudly if a Python loop sneaks back into a hot path.
+- Pytest fixtures + a performance regression test that fails loudly if a
+  Python loop sneaks back into a hot path. The Klaus Dormann functional and
+  Bruce Clark decimal conformance suites moved to v0.3 (see
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50)) once the
+  upstream GPL-3.0 licensing ruled out bundling them as sim assets.
 - GitHub Actions CI that builds the Cython extensions and runs the full
   pytest suite (with `@pytest.mark.slow` for the Klaus runs).
 - Fix undefined-behaviour on invalid opcodes / unmapped memory accesses.
@@ -63,7 +65,6 @@ wrong here, every later release pays for it.
 - [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
 - [#42](https://github.com/ricky-groenewald/py6502/issues/42) — Address-based binary loading in custom system builder
 - [#49](https://github.com/ricky-groenewald/py6502/issues/49) — Apple1Display DSP busy timer hardcoded to 1 MHz
-- [#50](https://github.com/ricky-groenewald/py6502/issues/50) — Wire Klaus + Bruce Clark tests into pytest with perf reporting
 - [#51](https://github.com/ricky-groenewald/py6502/issues/51) — Binary source picker: filesystem vs bundled assets, backed by an asset manifest
 
 **Explicit non-goals for v0.1.**
@@ -162,6 +163,12 @@ fixture scaffolding itself ships in v0.1; v0.2 expands it.
 - A packaged, themed DearPyGui build so the app stops looking like "raw
   dearpygui with default widgets".
 - 65C02 opcode support.
+- CI-fetched Klaus Dormann / Bruce Clark conformance runners with perf
+  reporting (see
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50)). GitHub
+  Actions pulls the upstream GPL-3.0 binaries at job time and invokes thin
+  runners checked in under `scripts/`; no wheel bundling, no submodule, no
+  GPL bytes in the distribution.
 
 **Open issues in GitHub milestone "v0.3 Release - Development Tools":**
 
@@ -170,6 +177,7 @@ fixture scaffolding itself ships in v0.1; v0.2 expands it.
 - [#21](https://github.com/ricky-groenewald/py6502/issues/21) — Customize and package dearpygui/imgui
 - [#24](https://github.com/ricky-groenewald/py6502/issues/24) — Enable saving of code snippets
 - [#26](https://github.com/ricky-groenewald/py6502/issues/26) — Character Map / Sprite Editors
+- [#50](https://github.com/ricky-groenewald/py6502/issues/50) — Wire Klaus + Bruce Clark tests into pytest with perf reporting
 
 ---
 
