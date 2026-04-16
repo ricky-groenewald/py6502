@@ -112,6 +112,20 @@ def test_load_into_read_only_region_succeeds() -> None:
     assert system.peek(0xFF0F) == 0xEE
 
 
+def test_load_bundled_wozmon_via_manifest() -> None:
+    """Bundled wozmon asset round-trips through the manifest API → load_binary_at."""
+    from py6502.sim.manifest import list_binaries
+
+    wozmon = next(a for a in list_binaries() if a.name == "apple1-wozmon")
+    system = _make_system(
+        MemoryRegion(name="ROM", start=0xFF00, size=0x0100, read_only=True),
+    )
+    data = wozmon.data()
+    system.load_binary_at(wozmon.default_address, data)
+    assert system.peek(0xFF00) == data[0]
+    assert system.peek(0xFFFF) == data[-1]
+
+
 def test_load_overwrites_previous_load() -> None:
     """Runtime overwrites are allowed — there's no binary-vs-binary overlap
     check at this layer (unlike config time)."""
