@@ -8,14 +8,17 @@ from typing import TYPE_CHECKING
 import dearpygui.dearpygui as dpg
 
 from py6502.sim.system import (
+    BinarySource,
     ComponentSpec,
+    ConfigError,
     CpuSpec,
     MemoryRegion,
     OptionSpec,
-    System,
     SystemConfig,
+    to_yaml_text,
     write_yaml_file,
 )
+from py6502.sim.system.loader import from_yaml_text
 from py6502.ui.utils import paths
 from py6502.ui.utils.presets import discover_presets, load_user_config_metadata
 from py6502.ui.utils.settings import save_settings
@@ -75,6 +78,7 @@ CUSTOM_FORM_TAG = "CustomSystemForm"
 CUSTOM_NAME_TAG = "CustomSystemName"
 CUSTOM_CPU_HZ_TAG = "CustomSystemCpuHz"
 CUSTOM_REGIONS_TAG = "CustomSystemRegionsGroup"
+CUSTOM_BINARIES_TAG = "CustomSystemBinariesGroup"
 CUSTOM_DISPLAY_TAG = "CustomSystemDisplay"
 CUSTOM_DISPLAY_ADDR_TAG = "CustomSystemDisplayAddr"
 CUSTOM_INPUT_TAG = "CustomSystemInput"
@@ -91,6 +95,8 @@ class SystemSelectorWindow:
         self._selected_is_custom = False
         self._region_counter = 0
         self._region_ids: list[int] = []
+        self._binary_counter = 0
+        self._binary_ids: list[int] = []
         self._source_dialog_target: int | None = None
         # Per-preset option selections, keyed by preset path. Persists across
         # re-selects so the user's picks stick if they navigate away and back.
@@ -191,6 +197,15 @@ class SystemSelectorWindow:
             dpg.add_group(tag=CUSTOM_REGIONS_TAG)
 
             dpg.add_separator()
+            with dpg.group(horizontal=True):
+                dpg.add_text("Binary Sources", color=(200, 200, 100))
+                dpg.add_button(
+                    label="+ Add Binary",
+                    callback=lambda s, a, u: self._add_binary(),
+                )
+            dpg.add_group(tag=CUSTOM_BINARIES_TAG)
+
+            dpg.add_separator()
             dpg.add_text("Peripherals", color=(200, 200, 100))
             with dpg.group(horizontal=True):
                 dpg.add_text("Display:")
@@ -218,7 +233,7 @@ class SystemSelectorWindow:
                 )
 
             dpg.add_spacer(height=4)
-            dpg.add_text("", tag=CUSTOM_STATUS_TAG)
+            dpg.add_text("", tag=CUSTOM_STATUS_TAG, wrap=600)
 
     # ------------------------------------------------------------------
     # Dynamic memory regions
@@ -257,42 +272,63 @@ class SystemSelectorWindow:
                     callback=lambda s, a, u: self._remove_region(u),
                     user_data=rid,
                 )
-            with dpg.group(horizontal=True):
-                dpg.add_text("  Source:")
-                dpg.add_input_text(
-                    tag=f"RegionSource_{rid}", readonly=True,
-                    width=260, hint="(optional binary)",
-                )
-                dpg.add_button(
-                    label="Browse...",
-                    callback=lambda s, a, u: self._browse_source(u),
-                    user_data=rid,
-                )
-                dpg.add_button(
-                    label="Clear",
-                    callback=lambda s, a, u: dpg.set_value(f"RegionSource_{u}", ""),
-                    user_data=rid,
-                )
 
     def _remove_region(self, rid: int) -> None:
         if rid in self._region_ids:
             self._region_ids.remove(rid)
             dpg.delete_item(f"CustomRegion_{rid}")
 
-    def _browse_source(self, rid: int) -> None:
-        self._source_dialog_target = rid
+    def _add_binary(self, path: str = "", address: str = "0000") -> None:
+        bid = self._binary_counter
+        self._binary_counter += 1
+        self._binary_ids.append(bid)
+
+        with dpg.group(tag=f"CustomBinary_{bid}", parent=CUSTOM_BINARIES_TAG):
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(
+                    tag=f"BinarySource_{bid}", readonly=True,
+                    default_value=path,
+                    width=260, hint="Binary file",
+                )
+                dpg.add_button(
+                    label="Browse...",
+                    callback=lambda s, a, u: self._browse_source(u),
+                    user_data=bid,
+                )
+                dpg.add_text(" @ 0x")
+                dpg.add_input_text(
+                    tag=f"BinaryAddr_{bid}", default_value=address,
+                    width=60, uppercase=True, hexadecimal=True, no_spaces=True,
+                )
+                dpg.add_button(
+                    label="X", width=24,
+                    callback=lambda s, a, u: self._remove_binary(u),
+                    user_data=bid,
+                )
+
+    def _remove_binary(self, bid: int) -> None:
+        if bid in self._binary_ids:
+            self._binary_ids.remove(bid)
+            dpg.delete_item(f"CustomBinary_{bid}")
+
+    def _browse_source(self, bid: int) -> None:
+        self._source_dialog_target = bid
         dpg.show_item(SOURCE_FILE_DIALOG_TAG)
 
     def _on_source_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
         file_path = app_data.get("file_path_name", "")
         if file_path and self._source_dialog_target is not None:
-            dpg.set_value(f"RegionSource_{self._source_dialog_target}", file_path)
+            dpg.set_value(f"BinarySource_{self._source_dialog_target}", file_path)
 
     def _reset_custom_form(self) -> None:
         for rid in list(self._region_ids):
             self._remove_region(rid)
         self._region_ids.clear()
         self._region_counter = 0
+        for bid in list(self._binary_ids):
+            self._remove_binary(bid)
+        self._binary_ids.clear()
+        self._binary_counter = 0
         self._add_region(name="RAM", start="0000", size="1000")
 
     # ------------------------------------------------------------------
@@ -388,12 +424,23 @@ class SystemSelectorWindow:
         for region in config.memory:
             end = region.start + region.size - 1
             tag = " [ROM]" if region.read_only else ""
-            src = f"  ← {Path(region.source).name}" if region.source else ""
             dpg.add_text(
                 f"  {region.name}  0x{region.start:04X}-0x{end:04X}  "
-                f"({_format_bytes(region.size)}){tag}{src}",
+                f"({_format_bytes(region.size)}){tag}",
                 parent=INFO_PANE_TAG, color=(180, 180, 180),
             )
+        if config.binaries:
+            dpg.add_text("Binaries:", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            for bs in config.binaries:
+                label = bs.source
+                if bs.source.startswith("file:"):
+                    label = Path(bs.source[len("file:"):]).name
+                elif bs.source.startswith("resource:"):
+                    label = bs.source[len("resource:"):].rsplit("/", 1)[-1]
+                dpg.add_text(
+                    f"  {label} @ 0x{bs.address:04X}",
+                    parent=INFO_PANE_TAG, color=(180, 180, 180),
+                )
         if config.display is not None:
             dpg.add_text(
                 f"Display: {config.display.type} @ 0x{config.display.address:04X}",
@@ -537,6 +584,10 @@ class SystemSelectorWindow:
             self._set_status("Add at least one memory region", error=True)
             return
 
+        binaries = self._collect_binaries()
+        if binaries is None:
+            return
+
         display = self._collect_display()
         if display is False:
             return
@@ -553,16 +604,19 @@ class SystemSelectorWindow:
             memory=tuple(memory),
             display=display if display else None,
             inputs=tuple(inputs) if inputs else (),
+            binaries=binaries,
         )
 
-        # Validate by constructing once before writing to disk.
+        # Validate via the loader before writing to disk — exercises
+        # Rule 13 binary coverage, which System.__init__ does not re-run.
+        target_dir = paths.user_configs_dir()
         try:
-            System(config)
-        except Exception as exc:
+            from_yaml_text(to_yaml_text(config), base_dir=target_dir)
+        except ConfigError as exc:
             self._set_status(str(exc), error=True)
             return
 
-        target = _unique_config_path(paths.user_configs_dir(), slug)
+        target = _unique_config_path(target_dir, slug)
         try:
             write_yaml_file(config, target)
         except OSError as exc:
@@ -594,13 +648,25 @@ class SystemSelectorWindow:
                 self._set_status(f"Region '{r_name}' has zero size", error=True)
                 return None
             r_ro = dpg.get_value(f"RegionRO_{rid}")
-            r_source = dpg.get_value(f"RegionSource_{rid}").strip()
-            source = f"file:{r_source}" if r_source else None
             regions.append(MemoryRegion(
-                name=r_name, start=r_start, size=r_size,
-                read_only=r_ro, source=source,
+                name=r_name, start=r_start, size=r_size, read_only=r_ro,
             ))
         return regions
+
+    def _collect_binaries(self) -> tuple[BinarySource, ...] | None:
+        out: list[BinarySource] = []
+        for bid in self._binary_ids:
+            path = dpg.get_value(f"BinarySource_{bid}").strip()
+            if not path:
+                self._set_status("A binary source has no file selected", error=True)
+                return None
+            try:
+                addr = int(dpg.get_value(f"BinaryAddr_{bid}"), 16)
+            except ValueError:
+                self._set_status(f"Invalid hex address for binary '{path}'", error=True)
+                return None
+            out.append(BinarySource(source=f"file:{path}", address=addr))
+        return tuple(out)
 
     def _collect_display(self) -> ComponentSpec | None | bool:
         display_type = dpg.get_value(CUSTOM_DISPLAY_TAG)

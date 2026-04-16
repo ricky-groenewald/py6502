@@ -15,7 +15,7 @@ from py6502.sim.cpu.mos6502 cimport MOS6502, Registers
 
 from py6502.sim.system.config import ComponentSpec, ConfigError, MemoryRegion, SystemConfig
 from py6502.sim.system.loader import from_yaml_file as _loader_from_yaml_file
-from py6502.sim.system.loader import resolve_source
+from py6502.sim.system.loader import regions_covering, resolve_source
 from py6502.sim.system.registry import resolve as _resolve_type
 
 
@@ -45,11 +45,28 @@ cdef class System:
         resolve_base = Path(base_dir) if base_dir is not None else Path.cwd()
         for region in config.memory:
             mem = Memory(region.size, region.name, region.read_only)
-            if region.source is not None:
-                data = resolve_source(region.source, resolve_base)
-                mem.set_data(list(data), region.load_offset)
             self._wire_component(mem, region.start, region.bus)
             self._memory_regions[region.name] = mem
+
+        # --- Binary sources ---------------------------------------------
+        # Rule 13 has already validated coverage; this loop can trust the
+        # config and just walk covering regions, slicing bytes into each.
+        for bs in config.binaries:
+            data = resolve_source(bs.source, resolve_base)
+            cursor = bs.address
+            offset = 0
+            remaining = len(data)
+            for region in regions_covering(config.memory, bs.bus, bs.address, remaining):
+                local = cursor - region.start
+                take = min(region.size - local, remaining)
+                (<Memory>self._memory_regions[region.name]).set_data(
+                    list(data[offset:offset + take]), local
+                )
+                cursor += take
+                offset += take
+                remaining -= take
+                if remaining == 0:
+                    break
 
         # --- Display ----------------------------------------------------
         if config.display is not None:

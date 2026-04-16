@@ -31,7 +31,10 @@ memory:
     start: 0xFF00
     size: 0x0100
     read_only: true
-    source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+
+binaries:
+  - source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+    address: 0xFF00
 
 display:
   type: Apple1Display

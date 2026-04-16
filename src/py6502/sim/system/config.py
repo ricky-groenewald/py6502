@@ -35,8 +35,13 @@ class MemoryRegion:
     size: int
     read_only: bool = False
     bus: str = "main"
-    source: Optional[str] = None
-    load_offset: int = 0
+
+
+@dataclass(frozen=True)
+class BinarySource:
+    source: str
+    address: int
+    bus: str = "main"
 
 
 @dataclass(frozen=True)
@@ -104,6 +109,7 @@ class SystemConfig:
     inputs: tuple[ComponentSpec, ...] = ()
     audio: Optional[ComponentSpec] = None
     other: tuple[ComponentSpec, ...] = ()
+    binaries: tuple[BinarySource, ...] = ()
     author: Optional[str] = None
     tags: tuple[str, ...] = ()
     options: tuple[OptionSpec, ...] = ()

@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from py6502.sim.system.config import (
+    BinarySource,
     BusSpec,
     ComponentSpec,
     ConfigError,
@@ -31,15 +32,17 @@ from py6502.sim.system.registry import COMPONENT_REGISTRY
 SUPPORTED_SCHEMA_VERSIONS = (1,)
 
 _TOP_LEVEL_REQUIRED = {"version", "id", "name", "description", "cpu", "memory"}
-_TOP_LEVEL_OPTIONAL = {"buses", "display", "inputs", "audio", "other", "author", "tags", "options"}
+_TOP_LEVEL_OPTIONAL = {"buses", "display", "inputs", "audio", "other", "binaries", "author", "tags", "options"}
 _TOP_LEVEL_ALLOWED = _TOP_LEVEL_REQUIRED | _TOP_LEVEL_OPTIONAL
 
 _CPU_REQUIRED = {"type", "hz"}
 _BUS_ALLOWED = {"address_width"}
 _MEMORY_REQUIRED = {"name", "start", "size"}
-_MEMORY_ALLOWED = _MEMORY_REQUIRED | {"read_only", "bus", "source", "load_offset"}
+_MEMORY_ALLOWED = _MEMORY_REQUIRED | {"read_only", "bus"}
 _COMPONENT_REQUIRED = {"type", "address"}
 _COMPONENT_ALLOWED = _COMPONENT_REQUIRED | {"bus", "params"}
+_BINARY_REQUIRED = {"source", "address"}
+_BINARY_ALLOWED = _BINARY_REQUIRED | {"bus"}
 
 _OPTION_REQUIRED = {"id", "label", "kind", "target", "default"}
 _OPTION_ALLOWED = _OPTION_REQUIRED | {"choices", "min", "max", "description"}
@@ -79,7 +82,7 @@ def from_yaml_text(
     Parse ``text`` as YAML, validate it, and return a ``SystemConfig``.
 
     ``base_dir`` is the directory used to resolve ``file:`` URIs on
-    memory regions. ``option_values`` maps option ids to user-selected
+    binary sources. ``option_values`` maps option ids to user-selected
     values; missing entries fall back to each option's declared default.
     """
     try:
@@ -122,6 +125,7 @@ def from_yaml_text(
     inputs = tuple(_parse_component(item, f"inputs[{i}]") for i, item in enumerate(raw.get("inputs") or ()))
     audio = _parse_component(raw.get("audio"), "audio") if raw.get("audio") else None
     other = tuple(_parse_component(item, f"other[{i}]") for i, item in enumerate(raw.get("other") or ()))
+    binaries = _parse_binaries(raw.get("binaries"))
 
     # Rule 4: component types exist
     _require_registered(cpu.type, "cpu.type")
@@ -196,16 +200,8 @@ def from_yaml_text(
                 f"exceeds bus address width ({address_width} bits)"
             )
 
-    # Rules 10 + 11: source URIs resolve and fit the region
-    for region in memory:
-        if region.source is None:
-            continue
-        data = resolve_source(region.source, base_dir)
-        if len(data) + region.load_offset > region.size:
-            raise ConfigError(
-                f"Rule 11: source for region {region.name!r} ({len(data)} bytes at offset "
-                f"0x{region.load_offset:04X}) exceeds region size 0x{region.size:04X}"
-            )
+    # Rule 13: binary sources resolve and cover a contiguous mapped range
+    _validate_binaries(binaries, memory, buses, base_dir)
 
     return SystemConfig(
         version=version,
@@ -219,6 +215,7 @@ def from_yaml_text(
         inputs=inputs,
         audio=audio,
         other=other,
+        binaries=binaries,
         author=raw.get("author"),
         tags=tuple(raw.get("tags") or ()),
         options=options,
@@ -320,11 +317,137 @@ def _parse_memory(raw: Any) -> tuple[MemoryRegion, ...]:
                 size=size,
                 read_only=bool(entry.get("read_only", False)),
                 bus=entry.get("bus", "main"),
-                source=entry.get("source"),
-                load_offset=int(entry.get("load_offset", 0)),
             )
         )
     return tuple(regions)
+
+
+def _parse_binaries(raw: Any) -> tuple[BinarySource, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise ConfigError("binaries must be a list")
+    out: list[BinarySource] = []
+    for i, entry in enumerate(raw):
+        label = f"binaries[{i}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{label} must be a mapping")
+        missing = _BINARY_REQUIRED - entry.keys()
+        if missing:
+            raise ConfigError(f"{label} missing required fields: {sorted(missing)}")
+        unknown = entry.keys() - _BINARY_ALLOWED
+        if unknown:
+            raise ConfigError(f"{label} has unknown fields: {sorted(unknown)}")
+        source = entry["source"]
+        address = entry["address"]
+        if not isinstance(source, str) or not source:
+            raise ConfigError(f"{label}.source must be a non-empty string")
+        if not isinstance(address, int):
+            raise ConfigError(f"{label}.address must be an integer")
+        bus = entry.get("bus", "main")
+        if not isinstance(bus, str):
+            raise ConfigError(f"{label}.bus must be a string")
+        out.append(BinarySource(source=source, address=address, bus=bus))
+    return tuple(out)
+
+
+def _validate_binaries(
+    binaries: tuple[BinarySource, ...],
+    memory: tuple[MemoryRegion, ...],
+    buses: dict[str, BusSpec],
+    base_dir: Path,
+) -> None:
+    """
+    Rule 13: each binary source must resolve, be non-empty, and cover a
+    contiguous mapped range on its declared bus. Binaries may not overlap.
+    """
+    placed: list[tuple[int, int, int]] = []  # (address, end_exclusive, index)
+    for i, bs in enumerate(binaries):
+        label = f"binaries[{i}]"
+        if bs.bus not in buses:
+            declared = ", ".join(sorted(buses))
+            raise ConfigError(
+                f"Rule 13: {label} references undeclared bus {bs.bus!r}. Declared: [{declared}]"
+            )
+        data = resolve_source(bs.source, base_dir)  # raises Rule 10 on failure
+        if not data:
+            raise ConfigError(f"Rule 13: {label} source {bs.source!r} is zero bytes")
+
+        same_bus = sorted(
+            (r for r in memory if r.bus == bs.bus), key=lambda r: r.start
+        )
+        if not same_bus:
+            raise ConfigError(
+                f"Rule 13: {label} targets bus {bs.bus!r} which has no memory regions"
+            )
+
+        # Merge adjacent regions into a list of [lo, hi) intervals (half-open).
+        merged: list[list[int]] = []
+        for r in same_bus:
+            lo = r.start
+            hi = r.start + r.size
+            if merged and merged[-1][1] == lo:
+                merged[-1][1] = hi
+            else:
+                merged.append([lo, hi])
+
+        start = bs.address
+        end = start + len(data)
+        # Find the merged interval containing `start`.
+        covering = None
+        for lo, hi in merged:
+            if lo <= start < hi:
+                covering = (lo, hi)
+                break
+        if covering is None:
+            raise ConfigError(
+                f"Rule 13: {label} source {bs.source!r} address 0x{start:04X} "
+                f"is not inside any memory region on bus {bs.bus!r}"
+            )
+        cov_lo, cov_hi = covering
+        if end > cov_hi:
+            # Distinguish "extends past end" from "crosses a gap".
+            tail_inside = any(lo <= end - 1 < hi for lo, hi in merged)
+            if tail_inside and end - 1 >= cov_hi:
+                raise ConfigError(
+                    f"Rule 13: {label} source {bs.source!r} "
+                    f"(0x{len(data):X} bytes at 0x{start:04X}) crosses an unmapped gap "
+                    f"on bus {bs.bus!r}"
+                )
+            raise ConfigError(
+                f"Rule 13: {label} source {bs.source!r} "
+                f"(0x{len(data):X} bytes at 0x{start:04X}) extends past the end of "
+                f"mapped range 0x{cov_lo:04X}..0x{cov_hi - 1:04X} on bus {bs.bus!r}"
+            )
+
+        # Overlap between binaries on the same bus.
+        for other_start, other_end, other_idx in placed:
+            if start < other_end and other_start < end:
+                raise ConfigError(
+                    f"Rule 13: {label} range 0x{start:04X}..0x{end - 1:04X} "
+                    f"overlaps with binaries[{other_idx}] on bus {bs.bus!r}"
+                )
+        placed.append((start, end, i))
+
+
+def regions_covering(
+    memory: tuple[MemoryRegion, ...],
+    bus: str,
+    address: int,
+    length: int,
+) -> tuple[MemoryRegion, ...]:
+    """
+    Return regions on ``bus`` whose range intersects
+    ``[address, address + length)``, sorted by ``start``. Shared by the
+    validator and ``System.__init__`` so both agree on the coverage set.
+    """
+    end = address + length
+    hits = [
+        r for r in memory
+        if r.bus == bus and r.start < end and address < r.start + r.size
+    ]
+    hits.sort(key=lambda r: r.start)
+    return tuple(hits)
 
 
 def _parse_component(raw: Any, label: str) -> ComponentSpec:
