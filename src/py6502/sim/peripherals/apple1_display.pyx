@@ -6,10 +6,14 @@ Register file (component-relative):
     offset 1 — DSPCR ($D013 on the bus)
 
 DSP bit 7 is the "display busy" flag. On real hardware it stays high
-for approximately one NTSC frame (≈ 16667 cycles at 1 MHz) after a DSP
-write, which is what throttles wozmon's output to ~60 chars/second. We
-preserve that timing with a simple countdown that is serviced from the
-batch-end tick hook — no per-cycle work on the CPU hot path.
+for approximately one NTSC frame after a DSP write, which is what
+throttles wozmon's output to ~60 chars/second. We preserve that timing
+with a simple countdown that is serviced from the batch-end tick hook —
+no per-cycle work on the CPU hot path. The countdown's initial value
+is computed once at ``bind()`` time from the configured CPU frequency
+(``round(cpu_hz / 60)`` — 60 Hz NTSC is hardcoded; PAL is not yet
+plumbed through), so the timing follows ``cpu_hz`` rather than being
+baked in at 1 MHz.
 """
 from cython cimport boundscheck, wraparound
 from importlib import resources
@@ -24,7 +28,7 @@ cdef float[4] FG_COLOR = [0x66 / 255.0, 1.0, 0x66 / 255.0, 1.0]
 DEF DSP = 0x0000
 DEF DSPCR = 0x0001
 DEF DSP_BUSY = 0x80
-DEF DSP_BUSY_CYCLES = 16667  # 1 NTSC frame at 1 MHz
+DEF DSP_BUSY_FRAME_HZ = 60  # NTSC; PAL (50 Hz) not yet plumbed through
 
 
 cdef class Apple1Display(Component):
@@ -40,9 +44,11 @@ cdef class Apple1Display(Component):
         self._text_display.clear_screen()
 
         self._busy_remaining = 0
+        self._busy_cycles = 0
 
     cdef void bind(self, object system):
         system.register_tick_hook(self)
+        self._busy_cycles = round(system.cpu_hz / DSP_BUSY_FRAME_HZ)
 
     @boundscheck(False)
     @wraparound(False)
@@ -64,7 +70,7 @@ cdef class Apple1Display(Component):
             elif stripped >= 0x60:
                 # Apple 1 charset quirk: 0x60-0x7F render as 0x40-0x5F.
                 self._text_display.place_character(stripped - 0x20)
-            self._busy_remaining = DSP_BUSY_CYCLES
+            self._busy_remaining = self._busy_cycles
         return data
 
     cdef void on_cycles_elapsed(self, unsigned long n):

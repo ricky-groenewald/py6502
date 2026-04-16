@@ -6,11 +6,12 @@ the Python surface deliberately stops at ``System``. These tests drive
 the peripherals through ``System.peek`` / ``System.poke``, which is the
 same path any debug panel or future test harness uses.
 """
+import dataclasses
 from importlib import resources
 
 import pytest
 
-from py6502.sim.system import System
+from py6502.sim.system import CpuSpec, System, from_yaml_file
 
 
 APPLE1_PRESET = resources.files("py6502.sim.assets").joinpath("presets/apple1.yaml")
@@ -59,6 +60,30 @@ def test_dsp_busy_timing_via_system_run_cycles() -> None:
     assert system.peek(0xD012) == 0x80
 
     system.run_cycles(16666)
+    assert system.peek(0xD012) == 0x80
+
+    system.run_cycles(1)
+    assert system.peek(0xD012) == 0x00
+
+
+def test_dsp_busy_timing_scales_with_cpu_hz() -> None:
+    """
+    The DSP busy window is derived from the configured CPU frequency at
+    bind time — ``round(cpu_hz / 60)`` cycles per NTSC frame — rather
+    than being baked in at 1 MHz. At 2 MHz one frame is 33 333 cycles,
+    so the flag must still be busy at cycle 33 332 and cleared at 33 333.
+    """
+    base_config = from_yaml_file(APPLE1_PRESET)
+    fast_config = dataclasses.replace(
+        base_config, cpu=CpuSpec(type="MOS6502", hz=2_000_000)
+    )
+    system = System(fast_config)
+
+    assert system.peek(0xD012) == 0x00
+    system.poke(0xD012, ord("A"))
+    assert system.peek(0xD012) == 0x80
+
+    system.run_cycles(33332)
     assert system.peek(0xD012) == 0x80
 
     system.run_cycles(1)

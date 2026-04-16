@@ -5,6 +5,7 @@ from py6502.sim.graphics.textdisplay cimport TextDisplay
 cdef class Apple1Display(Component):
     cdef TextDisplay _text_display
     cdef long _busy_remaining
+    cdef long _busy_cycles
 
     cdef int read(self, unsigned short address) except -1
     cdef int write(self, unsigned short address, unsigned char data) except -1
