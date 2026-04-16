@@ -10,6 +10,7 @@ Public surface:
     - ``OptionSpec`` / ``OptionChoice`` — user-selectable preset options
 """
 from .config import (
+    BinarySource,
     BusSpec,
     ComponentSpec,
     ConfigError,
@@ -24,6 +25,7 @@ from .system import System
 from .writer import to_yaml_text, write_yaml_file
 
 __all__ = [
+    "BinarySource",
     "BusSpec",
     "ComponentSpec",
     "ConfigError",

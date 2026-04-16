@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from py6502.sim.system import (
+    BinarySource,
     ComponentSpec,
     CpuSpec,
     MemoryRegion,
@@ -37,13 +38,16 @@ def _full() -> SystemConfig:
         cpu=CpuSpec(type="MOS6502", hz=2_000_000),
         memory=(
             MemoryRegion(name="RAM", start=0x0000, size=0x2000, read_only=False),
-            MemoryRegion(
-                name="ROM", start=0xFF00, size=0x0100, read_only=True,
-                source="resource:py6502.sim.assets.bios/apple1-wozmon.bin",
-            ),
+            MemoryRegion(name="ROM", start=0xFF00, size=0x0100, read_only=True),
         ),
         display=ComponentSpec(type="Apple1Display", address=0xD012, params={"blink": True}),
         inputs=(ComponentSpec(type="Apple1Keyboard", address=0xD010),),
+        binaries=(
+            BinarySource(
+                source="resource:py6502.sim.assets.bios/apple1-wozmon.bin",
+                address=0xFF00,
+            ),
+        ),
         author="writer tests",
         tags=("test", "synthetic"),
     )
@@ -94,3 +98,19 @@ def test_write_yaml_file_round_trip(tmp_path):
     assert target.exists()
     restored = from_yaml_text(target.read_text(encoding="utf-8"), base_dir=tmp_path)
     assert restored == original
+
+
+def test_regions_do_not_emit_legacy_source_fields():
+    text = to_yaml_text(_full())
+    assert "source:" in text  # still appears under the binaries section
+    # …but never on a memory region (which precedes the binaries block).
+    region_block, _, binary_block = text.partition("binaries:")
+    assert "source" not in region_block
+    assert "load_offset" not in region_block
+
+
+def test_binaries_section_emits_with_hex_address():
+    text = to_yaml_text(_full())
+    assert "binaries:" in text
+    assert "address: 0xFF00" in text
+    assert "resource:py6502.sim.assets.bios/apple1-wozmon.bin" in text

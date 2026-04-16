@@ -28,7 +28,9 @@ def test_apple1_preset_round_trip() -> None:
     assert region_by_name["RAM"].size == 0x1000
     assert region_by_name["RAM"].read_only is False
     assert region_by_name["ROM"].read_only is True
-    assert region_by_name["ROM"].source is not None
+    assert len(config.binaries) == 1
+    assert config.binaries[0].address == 0xFF00
+    assert config.binaries[0].source.startswith("resource:")
     assert config.display is not None
     assert config.display.type == "Apple1Display"
     assert config.display.address == 0xD012
@@ -171,6 +173,30 @@ memory:
     size: 0x0200
 """
     with pytest.raises(ConfigError, match="Rule 8"):
+        from_yaml_text(text, base_dir=tmp_path)
+
+
+def test_per_region_source_rejected_post_42(tmp_path: Path) -> None:
+    """
+    #42 moved binary sources to a top-level `binaries:` section. The old
+    per-region `source` / `load_offset` fields must now fail Rule 3 as
+    unknown fields — a clean break, no silent migration.
+    """
+    text = """
+version: 1
+id: legacy_source
+name: Legacy
+description: legacy
+cpu:
+  type: MOS6502
+  hz: 1000000
+memory:
+  - name: ROM
+    start: 0xFF00
+    size: 0x0100
+    source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+"""
+    with pytest.raises(ConfigError, match="memory\\[0\\] has unknown fields"):
         from_yaml_text(text, base_dir=tmp_path)
 
 

@@ -6,13 +6,11 @@ builder produces: no options, main bus only, everything resolved to
 concrete values. Round-trips through ``from_yaml_text`` to an equal
 ``SystemConfig`` dataclass.
 
-Address-like fields (``start``, ``size``, ``address``, ``load_offset``)
-emit as ``0x…`` hex literals. Everything else uses YAML's default int
-representer.
+Address-like fields (``start``, ``size``, ``address``) emit as ``0x…``
+hex literals. Everything else uses YAML's default int representer.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
 from pathlib import Path
 
 import yaml
@@ -60,6 +58,8 @@ def to_yaml_text(config: SystemConfig) -> str:
         doc["audio"] = _component_dict(config.audio)
     if config.other:
         doc["other"] = [_component_dict(c) for c in config.other]
+    if config.binaries:
+        doc["binaries"] = [_binary_dict(b) for b in config.binaries]
 
     return yaml.dump(doc, Dumper=_SystemConfigDumper, sort_keys=False)
 
@@ -79,10 +79,6 @@ def _region_dict(region) -> dict:
         out["read_only"] = True
     if region.bus != "main":
         out["bus"] = region.bus
-    if region.source is not None:
-        out["source"] = region.source
-    if region.load_offset:
-        out["load_offset"] = _HexInt(region.load_offset)
     return out
 
 
@@ -95,4 +91,14 @@ def _component_dict(spec) -> dict:
         out["bus"] = spec.bus
     if spec.params:
         out["params"] = dict(spec.params)
+    return out
+
+
+def _binary_dict(bs) -> dict:
+    out: dict = {
+        "source": bs.source,
+        "address": _HexInt(bs.address),
+    }
+    if bs.bus != "main":
+        out["bus"] = bs.bus
     return out

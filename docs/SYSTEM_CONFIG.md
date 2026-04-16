@@ -28,7 +28,7 @@ generate from a UI.
    those names to the actual Cython classes. Users can only instantiate
    components py6502 has explicitly registered.
 3. **ROM data lives in external files, never inline.** Configs stay
-   human-readable; ROMs stay binary. See [§4 Source URIs](#4-source-uris).
+   human-readable; ROMs stay binary. See [§5 Binaries](#5-binaries).
 4. **Typed externally, flat internally.** The schema has distinct
    `display` / `inputs` / `audio` / `other` sections so configs are
    self-documenting and the UI has clean hooks; internally `System`
@@ -64,7 +64,10 @@ memory:
     start: 0xFF00
     size: 0x0100
     read_only: true
-    source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+
+binaries:
+  - source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+    address: 0xFF00
 
 display:
   type: Apple1Display
@@ -76,8 +79,8 @@ inputs:
 ```
 
 That's the whole file. Everything else is optional. py6502 fills in
-defaults for `buses`, `audio`, `other`, `author`, `tags`, and each
-component's `bus` field.
+defaults for `buses`, `audio`, `other`, `binaries`, `author`, `tags`,
+and each component's `bus` field.
 
 ---
 
@@ -98,6 +101,7 @@ component's `bus` field.
 | `audio`       | ComponentSpec    | no       | `null`  | Exactly one audio device or none. (v0.2)                                  |
 | `other`       | list[CompSpec]   | no       | `[]`    | Misc components (timers, RTCs, etc.).                                     |
 | `buses`       | dict[str,BusSpec]| no       | see §3.3| Bus topology. v0.1 defaults to a single `main` bus.                       |
+| `binaries`    | list[BinarySrc]  | no       | `[]`    | Binary payloads loaded into memory at boot. See [§5](#5-binaries).        |
 | `author`      | string           | no       | `null`  | Credit field for user-shared configs.                                     |
 | `tags`        | list[string]     | no       | `[]`    | Free-form tags for UI filtering.                                          |
 | `options`     | list[OptionSpec] | no       | `[]`    | User-selectable preset options. See [§3.8](#38-options).                  |
@@ -111,7 +115,7 @@ cpu:
 ```
 
 The CPU type string resolves through the same registry as components
-([§5](#5-the-component-registry)). `hz` is the **master clock** —
+([§6](#6-the-component-registry)). `hz` is the **master clock** —
 per-bus dividers are applied on top of this in v0.2.
 
 v0.1 registered CPU types:
@@ -159,8 +163,6 @@ memory:
     size: 0x1000            # required, bytes (int or hex literal)
     read_only: false        # optional, default false
     bus: main               # optional, default "main"
-    source: null            # optional, default null → zero-initialized
-    load_offset: 0          # optional, where in the region to load `source`
 ```
 
 **Fields:**
@@ -170,10 +172,8 @@ memory:
 | `name`        | string | yes      | —        | Must be unique within this config. Referenced by `load_binary`.       |
 | `start`       | int    | yes      | —        | Bus address where the region begins. Hex literals (`0x0000`) allowed. |
 | `size`        | int    | yes      | —        | Number of bytes. Must satisfy `start + size <= 2**address_width`.     |
-| `read_only`   | bool   | no       | `false`  | If `true`, writes are silently dropped (ROM semantics).               |
+| `read_only`   | bool   | no       | `false`  | If `true`, runtime writes are silently dropped (ROM semantics).       |
 | `bus`         | string | no       | `"main"` | Which bus the region sits on.                                         |
-| `source`      | URI    | no       | `null`   | See [§4 Source URIs](#4-source-uris). `null` → zero-initialized.      |
-| `load_offset` | int    | no       | `0`      | Byte offset within the region where `source` bytes start loading.     |
 
 **Validation:**
 
@@ -181,8 +181,12 @@ memory:
 - Regions on the same bus must not overlap.
 - `start` must be bus-aligned to a byte boundary (implicit — addresses
   are bytes).
-- If `source` is provided, the source file must fit inside `size -
-  load_offset`; excess bytes fail the load.
+
+Memory regions are always zero-initialised at construction. To preload
+ROM or program data, declare a [binary source](#5-binaries) that targets
+the region's address range. Binaries may span multiple contiguous
+regions, and `read_only: true` regions accept the initial payload —
+the ROM guard only applies to runtime `write()` through the bus.
 
 ### 3.5 `display`
 
@@ -291,8 +295,9 @@ values must be one of the declared choices, `int` / `hex` values honour
 
 ## 4. Source URIs
 
-The `source:` field on a memory region is a **URI string** with one of
-two schemes:
+A **source URI** points at a blob of bytes on disk or inside a package.
+It is used by the [`binaries:`](#5-binaries) section. URIs have one of
+two schemes; no others are supported.
 
 ### `resource:`
 
@@ -326,7 +331,45 @@ boundary is local filesystem only.
 
 ---
 
-## 5. The component registry
+## 5. Binaries
+
+The top-level `binaries:` list describes payloads loaded into memory at
+`System.__init__` time, before reset. Each entry is independent of any
+single memory region — a binary is addressed by **absolute bus address**
+and may span multiple contiguous memory regions.
+
+```yaml
+binaries:
+  - source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+    address: 0xFF00
+  - source: file:./demos/game.bin
+    address: 0x0200
+    bus: main               # optional, default "main"
+```
+
+**Fields:**
+
+| Field      | Type   | Required | Default  | Notes                                                                 |
+|------------|--------|----------|----------|-----------------------------------------------------------------------|
+| `source`   | URI    | yes      | —        | See [§4 Source URIs](#4-source-uris).                                 |
+| `address`  | int    | yes      | —        | Absolute start address on the target bus. Hex literals allowed.       |
+| `bus`      | string | no       | `"main"` | Which bus to load into.                                               |
+
+**Span example.** If the config declares RAM at `0x0000..0x0FFF` and ROM
+at `0x1000..0x10FF` (both on `main`), a binary at `0x0F80` of 0x200
+bytes splits automatically — the first 0x80 bytes land in RAM at offset
+0x0F80, the next 0x80 bytes land in ROM at offset 0. A binary that
+would straddle a gap (e.g. RAM at `0x0000..0x0FFF` and ROM at
+`0x2000..0x20FF`) fails validation with Rule 13.
+
+**ROM payloads.** A binary may target a `read_only: true` region. The
+initial payload is written directly into the underlying `Memory`
+buffer; the read-only guard only affects runtime writes through the
+bus.
+
+---
+
+## 6. The component registry
 
 The registry is a plain dict on the Python side:
 
@@ -374,7 +417,7 @@ not register.
 
 ---
 
-## 6. Presets vs user configs
+## 7. Presets vs user configs
 
 py6502 distinguishes two kinds of configs:
 
@@ -397,7 +440,7 @@ A user can save a preset + their custom edits as a new user config.
 
 ---
 
-## 7. Validation rules
+## 8. Validation rules
 
 The loader runs these checks in order. The **first** failing rule fails
 the load with a clear error message pointing at the offending line.
@@ -418,14 +461,21 @@ the load with a clear error message pointing at the offending line.
 9. **`buses` constraints.** v0.1 only accepts `main`.
 10. **Source URIs resolve.** `resource:` packages must be importable;
     `file:` paths (relative to the config's dir) must exist.
-11. **Source size fits.** For each memory region with a `source`, the
-    source file size must be `<= region.size - load_offset`.
+11. *(reserved)*
 12. **Option targets resolve.** For every entry in `options:`, the
     declared `target:` path must resolve into the raw config (region
     name exists, list index in range, intermediate mappings are dicts
     rather than scalars). Option values must satisfy their declared
     `kind` / `choices` / `min` / `max`. Unknown option ids in a user-
     supplied values dict also fail this rule.
+13. **Binary sources cover a contiguous mapped range.** For every entry
+    in `binaries:`:
+    - the declared `bus` must exist in `buses`;
+    - the source must resolve to at least one byte (Rule 10 handles URI
+      resolution);
+    - the byte range `[address, address + len)` must lie entirely
+      inside the union of memory regions on that bus, with no gaps;
+    - no two binaries on the same bus may overlap.
 
 Validation failures raise `py6502.sim.system.ConfigError` with a message
 of the form:
@@ -438,7 +488,7 @@ ConfigError: apple_i.yaml:12: memory region 'RAM' overlaps with 'ROM' on bus 'ma
 
 ---
 
-## 8. Internal representation
+## 9. Internal representation
 
 After loading and validating, py6502 converts the YAML into a set of
 **frozen dataclasses** defined in `py6502.sim.system.config`:
@@ -463,8 +513,12 @@ class MemoryRegion:
     size: int
     read_only: bool = False
     bus: str = "main"
-    source: Optional[str] = None        # raw URI string
-    load_offset: int = 0
+
+@dataclass(frozen=True)
+class BinarySource:
+    source: str                         # URI, see §4
+    address: int                        # absolute bus address
+    bus: str = "main"
 
 @dataclass(frozen=True)
 class ComponentSpec:
@@ -503,6 +557,7 @@ class SystemConfig:
     inputs: tuple[ComponentSpec, ...] = ()
     audio: Optional[ComponentSpec] = None
     other: tuple[ComponentSpec, ...] = ()
+    binaries: tuple[BinarySource, ...] = ()
     author: Optional[str] = None
     tags: tuple[str, ...] = ()
     options: tuple[OptionSpec, ...] = ()
@@ -520,7 +575,7 @@ same reason.
 
 ---
 
-## 9. How `System` builds from a config
+## 10. How `System` builds from a config
 
 `System.__init__(config: SystemConfig)` does the following, in order:
 
@@ -530,16 +585,21 @@ same reason.
    `BusController` and store it in `self._buses[name]`. Inject the CPU
    into the `main` bus.
 3. **Wire memory regions.** For each `MemoryRegion`: create a `Memory`
-   component of the right size and read-only flag, load bytes from the
-   `source` URI if present (respecting `load_offset`), and call
-   `self._buses[region.bus].add_component(mem, region.start)`.
+   component of the right size and read-only flag and call
+   `self._buses[region.bus].add_component(mem, region.start)`. Regions
+   are zero-initialised.
 4. **Wire peripherals.** Flatten `display` + `inputs` + `audio` +
    `other` into one internal list. For each spec: resolve the type via
    the registry, instantiate with `(bus_controller, **spec.params)`,
    and call `self._buses[spec.bus].add_component(periph, spec.address)`.
    Keep a **direct reference** to the `display` device in
    `self._display` so `get_framebuffer()` never does a lookup.
-5. **Reset.** Call `self._buses["main"].send_reset()`.
+5. **Load binaries.** For each `BinarySource` in `config.binaries`,
+   resolve the URI and walk the covering memory regions on the target
+   bus (validated contiguous by Rule 13), writing each slice into the
+   matching `Memory` component via `set_data` — this path bypasses the
+   runtime read-only guard so `read_only` regions can hold ROM data.
+6. **Reset.** Call `self._buses["main"].send_reset()`.
 
 ### Clocking
 
@@ -562,7 +622,7 @@ a single master cycle count. The external API doesn't change.
 
 ---
 
-## 10. Versioning and forward-compatibility
+## 11. Versioning and forward-compatibility
 
 The `version:` field at the top of every config is the schema version.
 
@@ -586,7 +646,7 @@ The `version:` field at the top of every config is the schema version.
 
 ---
 
-## 11. Future extensions
+## 12. Future extensions
 
 These are documented here so the v0.1 implementation doesn't paint us
 into a corner:
@@ -650,7 +710,10 @@ memory:
     start: 0xFF00
     size: 0x0100        # 256 bytes
     read_only: true
-    source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+
+binaries:
+  - source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+    address: 0xFF00     # wozmon loads into the ROM region
 
 display:
   type: Apple1Display
