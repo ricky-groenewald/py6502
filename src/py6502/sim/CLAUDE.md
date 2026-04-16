@@ -131,8 +131,11 @@ up front and keep it cycle-exact.
 - pytest fixtures live in `tests/` (landing in v0.1). Each fixture builds
   a minimal `System` with exactly the components the test needs.
 - **Klaus Dormann 6502 functional test** and **Bruce Clark decimal test**
-  are wired up as a git submodule under `tests/vendor/`. Mark them
-  `@pytest.mark.slow`; a Klaus run takes ~96M cycles.
+  are wired up in CI (see issue #50, milestone v0.3) — GitHub Actions
+  fetches the upstream GPL-3.0 binaries at job time and invokes thin
+  conformance runners checked in under `scripts/`. The same invocation
+  works locally after fetching the binaries by hand. A Klaus run takes
+  ~96M cycles.
 - There is a dedicated **performance regression test** whose entire job
   is to fail loudly if someone reintroduces a Python loop on the hot path.
   If it fails after your change, treat it as a real failure — don't "just
