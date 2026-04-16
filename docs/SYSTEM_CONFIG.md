@@ -169,7 +169,7 @@ memory:
 
 | Field         | Type   | Required | Default  | Notes                                                                 |
 |---------------|--------|----------|----------|-----------------------------------------------------------------------|
-| `name`        | string | yes      | —        | Must be unique within this config. Referenced by `load_binary`.       |
+| `name`        | string | yes      | —        | Must be unique within this config. Preserved for diagnostics and YAML round-trip. |
 | `start`       | int    | yes      | —        | Bus address where the region begins. Hex literals (`0x0000`) allowed. |
 | `size`        | int    | yes      | —        | Number of bytes. Must satisfy `start + size <= 2**address_width`.     |
 | `read_only`   | bool   | no       | `false`  | If `true`, runtime writes are silently dropped (ROM semantics).       |

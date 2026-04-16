@@ -16,7 +16,7 @@ windows/                  DearPyGui modals and panels
 ├── video.py              Video output window + texture management
 ├── debug.py              Debug panel (controls, registers, memory monitor)
 ├── systemselector.py     System selection modal (presets + user YAMLs)
-├── binaryloader.py       Binary load dialog (region + offset)
+├── binaryloader.py       Binary load dialog (absolute address)
 ├── settings.py           Settings window
 └── about.py              Custom About dialog
 utils/                    Small helpers

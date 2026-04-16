@@ -351,6 +351,75 @@ def _parse_binaries(raw: Any) -> tuple[BinarySource, ...]:
     return tuple(out)
 
 
+def validate_coverage(
+    memory: tuple[MemoryRegion, ...],
+    bus: str,
+    address: int,
+    length: int,
+    *,
+    label: str,
+) -> tuple[MemoryRegion, ...]:
+    """
+    Check that ``[address, address + length)`` is covered by a contiguous
+    run of memory regions on ``bus``. Raises ``ConfigError`` prefixed with
+    ``label`` on failure; returns the covering regions (sorted by start)
+    on success. Shared by ``_validate_binaries`` at config time and
+    ``System.load_binary_at`` at runtime so the two paths agree on
+    wording and rules.
+    """
+    if length == 0:
+        raise ConfigError(f"{label} is zero bytes")
+
+    same_bus = sorted(
+        (r for r in memory if r.bus == bus), key=lambda r: r.start
+    )
+    if not same_bus:
+        raise ConfigError(
+            f"{label} targets bus {bus!r} which has no memory regions"
+        )
+
+    # Merge adjacent regions into a list of [lo, hi) intervals (half-open).
+    merged: list[list[int]] = []
+    for r in same_bus:
+        lo = r.start
+        hi = r.start + r.size
+        if merged and merged[-1][1] == lo:
+            merged[-1][1] = hi
+        else:
+            merged.append([lo, hi])
+
+    start = address
+    end = start + length
+    # Find the merged interval containing `start`.
+    covering = None
+    for lo, hi in merged:
+        if lo <= start < hi:
+            covering = (lo, hi)
+            break
+    if covering is None:
+        raise ConfigError(
+            f"{label} address 0x{start:04X} "
+            f"is not inside any memory region on bus {bus!r}"
+        )
+    cov_lo, cov_hi = covering
+    if end > cov_hi:
+        # Distinguish "extends past end" from "crosses a gap".
+        tail_inside = any(lo <= end - 1 < hi for lo, hi in merged)
+        if tail_inside and end - 1 >= cov_hi:
+            raise ConfigError(
+                f"{label} "
+                f"(0x{length:X} bytes at 0x{start:04X}) crosses an unmapped gap "
+                f"on bus {bus!r}"
+            )
+        raise ConfigError(
+            f"{label} "
+            f"(0x{length:X} bytes at 0x{start:04X}) extends past the end of "
+            f"mapped range 0x{cov_lo:04X}..0x{cov_hi - 1:04X} on bus {bus!r}"
+        )
+
+    return regions_covering(memory, bus, address, length)
+
+
 def _validate_binaries(
     binaries: tuple[BinarySource, ...],
     memory: tuple[MemoryRegion, ...],
@@ -370,56 +439,16 @@ def _validate_binaries(
                 f"Rule 13: {label} references undeclared bus {bs.bus!r}. Declared: [{declared}]"
             )
         data = resolve_source(bs.source, base_dir)  # raises Rule 10 on failure
-        if not data:
-            raise ConfigError(f"Rule 13: {label} source {bs.source!r} is zero bytes")
-
-        same_bus = sorted(
-            (r for r in memory if r.bus == bs.bus), key=lambda r: r.start
+        validate_coverage(
+            memory,
+            bs.bus,
+            bs.address,
+            len(data),
+            label=f"Rule 13: {label} source {bs.source!r}",
         )
-        if not same_bus:
-            raise ConfigError(
-                f"Rule 13: {label} targets bus {bs.bus!r} which has no memory regions"
-            )
-
-        # Merge adjacent regions into a list of [lo, hi) intervals (half-open).
-        merged: list[list[int]] = []
-        for r in same_bus:
-            lo = r.start
-            hi = r.start + r.size
-            if merged and merged[-1][1] == lo:
-                merged[-1][1] = hi
-            else:
-                merged.append([lo, hi])
 
         start = bs.address
         end = start + len(data)
-        # Find the merged interval containing `start`.
-        covering = None
-        for lo, hi in merged:
-            if lo <= start < hi:
-                covering = (lo, hi)
-                break
-        if covering is None:
-            raise ConfigError(
-                f"Rule 13: {label} source {bs.source!r} address 0x{start:04X} "
-                f"is not inside any memory region on bus {bs.bus!r}"
-            )
-        cov_lo, cov_hi = covering
-        if end > cov_hi:
-            # Distinguish "extends past end" from "crosses a gap".
-            tail_inside = any(lo <= end - 1 < hi for lo, hi in merged)
-            if tail_inside and end - 1 >= cov_hi:
-                raise ConfigError(
-                    f"Rule 13: {label} source {bs.source!r} "
-                    f"(0x{len(data):X} bytes at 0x{start:04X}) crosses an unmapped gap "
-                    f"on bus {bs.bus!r}"
-                )
-            raise ConfigError(
-                f"Rule 13: {label} source {bs.source!r} "
-                f"(0x{len(data):X} bytes at 0x{start:04X}) extends past the end of "
-                f"mapped range 0x{cov_lo:04X}..0x{cov_hi - 1:04X} on bus {bs.bus!r}"
-            )
-
         # Overlap between binaries on the same bus.
         for other_start, other_end, other_idx in placed:
             if start < other_end and other_start < end:

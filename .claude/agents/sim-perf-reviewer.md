@@ -79,7 +79,7 @@ For each candidate file:
   docstrings).
 - Don't flag changes outside `src/py6502/sim/`.
 - Don't flag one-shot configuration loops (`__cinit__`, `reset`,
-  `load_binary`, `add_component`) — those are allowed to be as Pythonic
+  `load_binary_at`, `add_component`) — those are allowed to be as Pythonic
   as they want.
 - Don't propose architectural rewrites that go beyond the rules above.
 

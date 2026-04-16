@@ -35,7 +35,7 @@ def test_apple1_boots_and_renders() -> None:
 def test_load_binary_round_trip() -> None:
     system = System.from_yaml_file(APPLE1_PRESET)
     payload = bytes([0xEA, 0xEA, 0x4C, 0x00, 0x02])  # NOP NOP JMP $0200
-    system.load_binary("RAM", 0x0200, payload)
+    system.load_binary_at(0x0200, payload)
 
     for i, byte in enumerate(payload):
         assert system.peek(0x0200 + i) == byte

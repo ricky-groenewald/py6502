@@ -15,7 +15,7 @@ from py6502.sim.cpu.mos6502 cimport MOS6502, Registers
 
 from py6502.sim.system.config import ComponentSpec, ConfigError, MemoryRegion, SystemConfig
 from py6502.sim.system.loader import from_yaml_file as _loader_from_yaml_file
-from py6502.sim.system.loader import regions_covering, resolve_source
+from py6502.sim.system.loader import regions_covering, resolve_source, validate_coverage
 from py6502.sim.system.registry import resolve as _resolve_type
 
 
@@ -31,6 +31,7 @@ cdef class System:
         self._cpu_hz = config.cpu.hz
         self._buses = {}
         self._memory_regions = {}
+        self._memory_config = config.memory
         self._inputs = []
         self._display = None
 
@@ -111,10 +112,6 @@ cdef class System:
     def cpu_hz(self):
         return self._cpu_hz
 
-    @property
-    def memory_region_names(self):
-        return tuple(self._memory_regions.keys())
-
     cpdef void run_cycles(self, unsigned long cycles) except *:
         if cycles:
             (<BusController>self._buses["main"]).run_cycles(cycles)
@@ -147,10 +144,40 @@ cdef class System:
     cpdef void reset(self):
         (<BusController>self._buses["main"]).send_reset()
 
-    cpdef void load_binary(self, str region_name, unsigned int offset, bytes data):
-        if region_name not in self._memory_regions:
-            raise KeyError(f"Unknown memory region: {region_name}")
-        (<Memory>self._memory_regions[region_name]).set_data(list(data), offset)
+    cpdef void load_binary_at(self, unsigned int address, bytes data):
+        # Runtime counterpart to config-time binary loading. validate_coverage
+        # runs the same Rule-13-shape checks (zero bytes, address inside a
+        # region, contiguous, doesn't run off the end) and returns the
+        # covering regions; the write loop mirrors __init__'s behaviour.
+        # Like config-time loads, this writes through Memory.set_data, which
+        # bypasses the read_only flag — loading a ROM image at runtime is
+        # intentional, not a bug.
+        cdef unsigned int cursor, local, take, offset, remaining
+        if address > 0xFFFF:
+            raise ConfigError(
+                f"load_binary_at: address 0x{address:X} is outside the 16-bit bus"
+            )
+        covering = validate_coverage(
+            self._memory_config,
+            "main",
+            address,
+            len(data),
+            label="load_binary_at:",
+        )
+        cursor = address
+        offset = 0
+        remaining = len(data)
+        for region in covering:
+            local = cursor - region.start
+            take = min(region.size - local, remaining)
+            (<Memory>self._memory_regions[region.name]).set_data(
+                list(data[offset:offset + take]), local
+            )
+            cursor += take
+            offset += take
+            remaining -= take
+            if remaining == 0:
+                break
 
     cpdef Registers get_registers(self):
         return (<BusController>self._buses["main"]).get_registers()

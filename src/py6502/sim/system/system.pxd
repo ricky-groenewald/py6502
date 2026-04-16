@@ -12,13 +12,14 @@ cdef class System:
     cdef Component _display
     cdef list _inputs
     cdef dict _memory_regions
+    cdef tuple _memory_config
 
     cpdef void run_cycles(self, unsigned long cycles) except *
     cpdef void run_for_microseconds(self, unsigned long microseconds) except *
     cpdef unsigned long step_cycle(self) except *
     cpdef unsigned long step_instruction(self) except *
     cpdef void reset(self)
-    cpdef void load_binary(self, str region_name, unsigned int offset, bytes data)
+    cpdef void load_binary_at(self, unsigned int address, bytes data)
     cpdef Registers get_registers(self)
     cpdef void set_registers(self, Registers registers)
     cpdef object get_framebuffer(self)

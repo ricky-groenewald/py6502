@@ -1,4 +1,4 @@
-"""Binary loader dialog — load a .bin/.rom file into a named memory region."""
+"""Binary loader dialog — load a .bin/.rom file at an absolute address."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,8 +11,7 @@ if TYPE_CHECKING:
 
 WINDOW_TAG = "BinaryLoaderWindow"
 FILE_PATH_TAG = "BinaryLoaderFilePath"
-REGION_DROPDOWN_TAG = "BinaryLoaderRegionDropdown"
-OFFSET_TAG = "BinaryLoaderOffset"
+ADDRESS_TAG = "BinaryLoaderAddress"
 STATUS_TAG = "BinaryLoaderStatus"
 FILE_DIALOG_TAG = "BinaryLoaderFileDialog"
 
@@ -40,19 +39,13 @@ class BinaryLoaderWindow:
                 )
                 dpg.add_button(label="Browse...", callback=self._on_browse)
 
-            # Region + offset row
+            # Address row
             with dpg.group(horizontal=True):
-                dpg.add_text("Region:")
-                dpg.add_combo(
-                    tag=REGION_DROPDOWN_TAG,
-                    items=[],
-                    width=120,
-                )
-                dpg.add_text("  Offset: 0x")
+                dpg.add_text("Address: 0x")
                 dpg.add_input_text(
-                    tag=OFFSET_TAG,
+                    tag=ADDRESS_TAG,
                     default_value="0000",
-                    width=50,
+                    width=60,
                     uppercase=True,
                     hexadecimal=True,
                     no_spaces=True,
@@ -80,20 +73,11 @@ class BinaryLoaderWindow:
             dpg.add_file_extension(".*")
 
     def show(self) -> None:
-        # Reset state
         self._file_path = ""
         dpg.set_value(FILE_PATH_TAG, "")
-        dpg.set_value(OFFSET_TAG, "0000")
+        dpg.set_value(ADDRESS_TAG, "0000")
         dpg.set_value(STATUS_TAG, "")
         dpg.configure_item(STATUS_TAG, color=(255, 255, 255))
-
-        # Populate region dropdown from current system
-        if self._app.system is not None:
-            regions = list(self._app.system.memory_region_names)
-            dpg.configure_item(REGION_DROPDOWN_TAG, items=regions)
-            if regions:
-                dpg.set_value(REGION_DROPDOWN_TAG, regions[0])
-
         dpg.show_item(WINDOW_TAG)
 
     # ------------------------------------------------------------------
@@ -116,26 +100,21 @@ class BinaryLoaderWindow:
             self._set_status("No file selected", error=True)
             return
 
-        region = dpg.get_value(REGION_DROPDOWN_TAG)
-        if not region:
-            self._set_status("No memory region selected", error=True)
-            return
-
-        offset_str = dpg.get_value(OFFSET_TAG)
+        address_str = dpg.get_value(ADDRESS_TAG)
         try:
-            offset = int(offset_str, 16)
+            address = int(address_str, 16)
         except ValueError:
-            self._set_status("Invalid offset value", error=True)
+            self._set_status("Invalid address value", error=True)
             return
 
         try:
             data = Path(self._file_path).read_bytes()
-            self._app.system.load_binary(region, offset, data)
-        except (IOError, KeyError, Exception) as exc:
+            self._app.system.load_binary_at(address, data)
+        except Exception as exc:
             self._set_status(str(exc), error=True)
             return
 
-        self._set_status(f"Loaded {len(data)} bytes into {region} at offset 0x{offset:04X}")
+        self._set_status(f"Loaded {len(data)} bytes at 0x{address:04X}")
         dpg.hide_item(WINDOW_TAG)
 
     def _on_cancel(self) -> None:
