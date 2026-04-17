@@ -20,7 +20,7 @@ with an integrated assembler, snippet editor, and sprite tools. See
 
 ## Status
 
-v0.1 is in active development. It ships a cycle-accurate 6502, the Apple I
+**v0.1** is feature-complete. It ships a cycle-accurate 6502, the Apple I
 preset (with bundled wozmon ROM and Sphere font), a system selector with
 preset / user-config / custom-system pickers, a debug panel with
 step-level debugging and a memory monitor, a runtime binary loader, and
