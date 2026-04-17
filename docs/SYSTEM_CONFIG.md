@@ -581,25 +581,32 @@ same reason.
 
 1. **Resolve the CPU.** `COMPONENT_REGISTRY[config.cpu.type]()`, store
    as `self._cpu`, stash `self._cpu_hz`.
-2. **Build buses.** For each entry in `config.buses`, create a
-   `BusController` and store it in `self._buses[name]`. Inject the CPU
-   into the `main` bus.
+2. **Build the main bus.** Create a `BusController("main", self._cpu, …)`
+   and store it in `self._buses["main"]`. (v0.1 ships single-bus; the
+   `_buses` dict is already in place for v0.2's multi-bus expansion.)
 3. **Wire memory regions.** For each `MemoryRegion`: create a `Memory`
-   component of the right size and read-only flag and call
+   component of the right size and `read_only` flag and call
    `self._buses[region.bus].add_component(mem, region.start)`. Regions
    are zero-initialised.
-4. **Wire peripherals.** Flatten `display` + `inputs` + `audio` +
-   `other` into one internal list. For each spec: resolve the type via
-   the registry, instantiate with `(bus_controller, **spec.params)`,
-   and call `self._buses[spec.bus].add_component(periph, spec.address)`.
-   Keep a **direct reference** to the `display` device in
-   `self._display` so `get_framebuffer()` never does a lookup.
-5. **Load binaries.** For each `BinarySource` in `config.binaries`,
+4. **Load binaries.** For each `BinarySource` in `config.binaries`,
    resolve the URI and walk the covering memory regions on the target
    bus (validated contiguous by Rule 13), writing each slice into the
    matching `Memory` component via `set_data` — this path bypasses the
-   runtime read-only guard so `read_only` regions can hold ROM data.
-6. **Reset.** Call `self._buses["main"].send_reset()`.
+   runtime read-only guard so `read_only` regions can hold ROM
+   payloads. Binaries are loaded **before** peripherals so a
+   peripheral's `bind()` can read freshly-loaded ROM bytes if it needs
+   to.
+5. **Wire peripherals.** For each `display`, `inputs`, `audio`, and
+   `other` spec: resolve the type via the registry, instantiate with
+   `cls(**spec.params)`, and call
+   `self._buses[spec.bus].add_component(periph, spec.address)`. Keep
+   direct references for `display` (one) and `inputs` (a list) so
+   `get_framebuffer()` and `send_key()` never do a lookup.
+6. **Late-bind.** Call `bind(self)` on the display and on every input
+   peripheral, so they can grab cross-component refs (e.g. read
+   `cpu_hz`) and subscribe to tick hooks now that every other
+   component is on the bus.
+7. **Reset.** Call `self._buses["main"].send_reset()`.
 
 ### Clocking
 

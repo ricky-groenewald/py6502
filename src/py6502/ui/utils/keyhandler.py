@@ -46,7 +46,15 @@ class KeyHandler:
 
 def _key_to_char(app_data: int, shift_down: bool) -> str | None:
     """Translate a DearPyGui key code into Apple I ASCII. Returns None for
-    keys that have no mapping."""
+    keys that have no mapping.
+
+    The bare integer constants (601, 596, 602, 606) are platform key
+    codes for ``;`` ``'`` ``=`` ``\\``` respectively that DearPyGui
+    surfaces in callbacks but does not expose as named ``mvKey_*``
+    enums. They were determined empirically by printing app_data on a
+    macOS host; if a future DearPyGui release adds named constants,
+    swap them in.
+    """
     if dpg.mvKey_A <= app_data <= dpg.mvKey_Z:
         return chr(app_data - dpg.mvKey_A + ord("A"))
     if dpg.mvKey_0 <= app_data <= dpg.mvKey_9:
@@ -61,9 +69,9 @@ def _key_to_char(app_data: int, shift_down: bool) -> str | None:
         return ">" if shift_down else "."
     if app_data == dpg.mvKey_Slash:
         return "?" if shift_down else "/"
-    if app_data == 601:
+    if app_data == 601:  # ; / :
         return ":" if shift_down else ";"
-    if app_data == 596:
+    if app_data == 596:  # ' / "
         return '"' if shift_down else "'"
     if app_data == dpg.mvKey_Open_Brace:
         return "{" if shift_down else "["
@@ -73,8 +81,8 @@ def _key_to_char(app_data: int, shift_down: bool) -> str | None:
         return "|" if shift_down else "\\"
     if app_data == dpg.mvKey_Minus:
         return "_" if shift_down else "-"
-    if app_data == 602:
+    if app_data == 602:  # = / +
         return "+" if shift_down else "="
-    if app_data == 606:
+    if app_data == 606:  # ` / ~
         return "~" if shift_down else "`"
     return None

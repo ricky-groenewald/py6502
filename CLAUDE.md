@@ -78,6 +78,3 @@ play/                  Scratch 6502 asm + binaries; not part of the package
 
 - `play/` — Ricky's scratchpad. Don't normalise or refactor anything under
   it; treat it as read-only input data.
-- `src/py6502/ui/py6502ui.py` — the legacy monolithic UI. It stays as a
-  feature-parity reference until the new `Py6502App` shell replaces it in
-  v0.1. Don't port new features into it.

@@ -1,3 +1,17 @@
+"""6502 mnemonic → opcode-per-addressing-mode lookup table.
+
+This is the source-of-truth for opcode disassembly in the debug panel.
+``windows/debug.py`` flips it into an opcode → "MNEMONIC mode" dict at
+build time via ``_build_opcode_disasm`` so every refresh of the
+register panel is a single dict lookup.
+
+Column order (matches ADDRESSING_MODES in windows/debug.py):
+    immediate, absolute, zero-page, accumulator, implied,
+    (indirect,X), (indirect),Y, zero-page,X, absolute,X, absolute,Y,
+    relative, (indirect), zero-page,Y.
+
+``None`` means "this mnemonic has no encoding in that addressing mode".
+"""
 INSTRUCTION_MAP_6502 = {
 #MNEMONIC: [ #  ,   a  ,   zp ,   Acc,   Imp, ($,X), ($),Y,  zp,X,   a,X,   a,Y,   r  ,   ($),  zp,Y]
     'ADC': [0x69,  0x6D,  0x65,  None,  None,  0x61,  0x71,  0x75,  0x7D,  0x79,  None,  None,  None],
@@ -10,8 +24,9 @@ INSTRUCTION_MAP_6502 = {
     'BMI': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x30,  None,  None],
     'BNE': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0xD0,  None,  None],
     'BPL': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x10,  None,  None],
-    # BRK is always a 2-byte instruction, but the user does not need to specify an operand.
-    # However we will make provision for it having either an immediate value or no operand at all.
+    # BRK is always 2 bytes on the wire, but the operand byte is
+    # ignored — list it under both "immediate" and "implied" so the
+    # disassembler can render either spelling without lying.
     'BRK': [0x00,  None,  None,  None,  0x00,  None,  None,  None,  None,  None,  None,  None,  None],
     'BVC': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x50,  None,  None],
     'BVS': [None,  None,  None,  None,  None,  None,  None,  None,  None,  None,  0x70,  None,  None],

@@ -1,7 +1,15 @@
 """
 CYTHON CONTROLLER COMPONENT CLASS IMPLEMENTATIONS
 
-Simulator definitions and functions for a component controller
+The BusController is the heart of the address-routing layer. It owns a
+flat 64K table of ``MappedAddress`` slots — one per 16-bit address —
+each holding a raw ``PyObject*`` to the owning Component plus the
+component-relative offset. A bus read/write is therefore one array
+indexed lookup, one C cast, and one cdef virtual call into the
+component — no Python attribute access, no list walk, no hash lookup.
+
+Tick-hook fan-out is intentionally batched, not per-cycle: see
+``run_cycles`` for the reasoning.
 """
 from cpython.ref cimport PyObject, Py_INCREF, Py_DECREF
 from cython cimport boundscheck, wraparound
@@ -22,10 +30,15 @@ class AddressRangeUnavailable(Exception):
 
 cdef class BusController(Component):
     """
-    Class definition for an 8-bit component controller
+    Class definition for an 8-bit component controller.
+
+    Holds the address→Component map and routes the CPU's reads/writes
+    through it. Also owns the tick-hook list, so peripherals can hang
+    cycle-accounting work off the end of every ``run_cycles`` batch
+    without poking at the CPU hot path.
     """
     def __init__(self, str controller_name, MOS6502 processor, bint raise_on_unmapped_access=True) -> None:
-        # Controllers will always only have 16-bit address space
+        # Controllers always have a 16-bit address space — 0x10000 slots.
         super().__init__(0x10000, controller_name)
         self._processor = processor
         self._processor.set_memory_bus(self)
@@ -33,12 +46,20 @@ cdef class BusController(Component):
         self._current_bus_data = 0
         self._current_bus_read_write_bar = 1
         self._tick_hooks = []
+        # Every unmapped slot points at a single shared EmptyAddress
+        # sentinel. We hand it a pointer to ``_current_bus_data`` so it
+        # can return the last byte that was on the bus (open-bus
+        # behaviour) when ``raise_on_unmapped_access`` is False.
         self._empty_address = EmptyAddress(
             'EmptyAddress',
             raise_on_unmapped_access
         )
         self._empty_address.set_bus_data_ptr(&self._current_bus_data)
 
+        # The MappedAddress table stores raw PyObject* pointers — Python's
+        # refcount machinery does not see them. We have to INCREF here for
+        # every cell, and the matching DECREF lives in __dealloc__ (and,
+        # per cell, in add_component when a real component takes over).
         for i in range(0x10000):
             self._component_address_map[i].component = <PyObject*>self._empty_address
             self._component_address_map[i].internal_address = i
@@ -77,12 +98,15 @@ cdef class BusController(Component):
                     f'Address overlap at 0x{address_start+i:04X} with {conflict_name}.'
                 )
 
-        # Then map the addresses
+        # Then map the addresses. Each cell's PyObject* slot is being
+        # repointed from the shared EmptyAddress sentinel to the real
+        # component, so refcount the swap by hand: INCREF the new owner,
+        # DECREF the EmptyAddress slot we're displacing.
         for i in range(component.get_size()):
             self._component_address_map[address_start+i].internal_address = i
             self._component_address_map[address_start+i].component = <PyObject*>component
             Py_INCREF(component)
-            Py_DECREF(self._empty_address) # NEED TO decrement ref count to empty address
+            Py_DECREF(self._empty_address)
 
     cdef void register_tick_hook(self, object component):
         """
@@ -99,6 +123,16 @@ cdef class BusController(Component):
     @boundscheck(False)
     @wraparound(False)
     cdef void run_cycles(self, unsigned long cycles) except *:
+        # The hot loop. ``_mos6502_step`` is a free cdef function — calling
+        # it directly skips the per-iteration vtable dispatch we'd pay
+        # going through ``processor.clock()``.
+        #
+        # Tick hooks fire **once per batch**, not once per cycle, with the
+        # batch size handed in. Peripherals that need cycle-accurate
+        # timing (e.g. Apple1Display's DSP busy timer) keep their own
+        # countdown and decrement by ``n`` in on_cycles_elapsed — that's
+        # how we keep the steady-state loop entirely inside compiled C
+        # while still giving the rest of the system a chance to breathe.
         cdef Py_ssize_t hook_idx
         cdef Py_ssize_t hook_count
         cdef MOS6502 processor = self._processor
