@@ -1,5 +1,5 @@
 from libc.stdio cimport *
-    
+
 cdef class Font:
     cdef bint* character_set
     cdef unsigned char width
@@ -10,6 +10,11 @@ cdef class Font:
     cdef inline bint get_character_pixel(self, unsigned char character, unsigned char x, unsigned char y)
 
 cdef class TextDisplay:
+    # See textdisplay.pyx for the field-by-field semantics; this header
+    # only declares the storage. The 240×256 buffer is fixed-size on
+    # purpose: it's contiguous, stack-shaped, and big enough for every
+    # v0.1 display we ship. NES-era resolutions in v0.2 will use a
+    # different graphics class entirely (this one is character-grid).
     cdef Font _font
     cdef unsigned int _resolution_x
     cdef unsigned int _resolution_y
@@ -19,14 +24,18 @@ cdef class TextDisplay:
     cdef unsigned char _cursor_pos_y
     cdef unsigned char _cursor_last_cr_y_pos
     cdef unsigned char _start_cursor_row
-    cdef unsigned char _cursor_mode  # 0 = off, 1 = blinking, 2 = solid
+    cdef unsigned char _cursor_mode
     cdef unsigned char _cursor_blink_timer
     cdef bint _cursor_visible
     cdef unsigned char* _cursor_pixel_map
-    cdef unsigned char[240][256] _screen_buffer # 240 rows, 256 columns
+    # _screen_buffer[y][x] — y is the row (0 = top of pixel space, not
+    # of the unwrapped logical screen), x is the column. Values are
+    # colour indices into _colors, not RGBA.
+    cdef unsigned char[240][256] _screen_buffer
     cdef unsigned char _character_max_cols
     cdef unsigned char _character_max_rows
-    cdef float[3][4] _colors #RGBA - 0 = background, 1 = foreground, 2 = cursor
+    # _colors[i] is RGBA. i=0 background, i=1 foreground, i=2 cursor.
+    cdef float[3][4] _colors
 
     cdef list get_screen_buffer(self)
     cdef void set_cursor(self, unsigned char character, float[4] color, unsigned char cursor_mode)

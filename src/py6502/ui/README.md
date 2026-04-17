@@ -40,10 +40,13 @@ themes.py        ThemeManager — DearPyGui theme factories
 
 ```python
 while dpg.is_dearpygui_running():
+    now = perf_counter()
+    dt = min(now - last_tick_time, MAX_CATCH_UP_SECONDS)
+    last_tick_time = now
     if self.system is not None:
         if self._sim_running:
             self._drain_keys_into_system()
-            self.system.run_for_microseconds(FRAME_MICROSECONDS)
+            self.system.run_for_microseconds(int(dt * 1_000_000))
             self._video.update_framebuffer(self.system.get_framebuffer())
         self._debug.refresh(self.system)
     dpg.render_dearpygui_frame()
@@ -52,6 +55,13 @@ while dpg.is_dearpygui_running():
 This is the one invariant the frontend has to protect: **one coarse call
 to the sim per UI frame**. Anything that loops over CPU cycles from here
 is a bug, regardless of whether the tests pass.
+
+The sim is paced by wall-clock `dt`, not a fixed per-frame constant, so
+its effective frequency stays locked to the configured `cpu_hz`
+regardless of the host display's refresh rate.
+`MAX_CATCH_UP_SECONDS` (50 ms) caps the dt the sim can be asked to
+advance in a single frame, which prevents catch-up bursts after a long
+pause.
 
 ## New System flow
 

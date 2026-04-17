@@ -392,6 +392,9 @@ class SystemSelectorWindow:
             if meta["tags"]:
                 tags_str = ", ".join(str(t) for t in meta["tags"])
                 dpg.add_text(f"Tags: {tags_str}", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            # Presets carry no resolved ``config`` object — they're only
+            # the metadata header. User configs do, because the loader
+            # has already parsed them into a SystemConfig.
             if not meta.get("is_preset", False):
                 self._render_file_line(path)
                 config = meta.get("config")
@@ -448,9 +451,12 @@ class SystemSelectorWindow:
         dpg.add_spacer(parent=INFO_PANE_TAG, height=12)
         dpg.add_text("Options", parent=INFO_PANE_TAG, color=(255, 255, 0))
         dpg.add_separator(parent=INFO_PANE_TAG)
+        # First time we render this preset's options in the current
+        # selector session, seed from whatever the user picked last
+        # time (persisted in settings.last_option_values keyed by path).
+        # Subsequent re-selects in the same session keep the in-memory
+        # picks so the user can toggle previews without losing state.
         if path not in self._option_values:
-            # Seed from last-used values for this path (from persisted settings),
-            # so the widgets reflect what the user picked last time.
             persisted = self._app.settings.last_option_values.get(path, {})
             self._option_values[path] = dict(persisted)
         selections = self._option_values[path]
@@ -598,8 +604,14 @@ class SystemSelectorWindow:
             binaries=binaries,
         )
 
-        # Validate via the loader before writing to disk — exercises
-        # Rule 13 binary coverage, which System.__init__ does not re-run.
+        # Round-trip the in-memory config through the loader before
+        # writing to disk. This is the only path that runs Rule 13
+        # (binary sources cover a contiguous mapped range with no gaps
+        # or overlap — see docs/SYSTEM_CONFIG.md §8); System.__init__
+        # trusts that the loader already enforced it. Catching the
+        # ConfigError here means the user sees the validation message
+        # in the form's status line instead of a cryptic load failure
+        # the next time they pick this preset.
         target_dir = paths.user_configs_dir()
         try:
             from_yaml_text(to_yaml_text(config), base_dir=target_dir)

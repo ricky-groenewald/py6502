@@ -53,9 +53,8 @@ wrong here, every later release pays for it.
 - GitHub Actions CI that builds the Cython extensions and runs the full
   pytest suite (with `@pytest.mark.slow` for the Klaus runs).
 - Fix undefined-behaviour on invalid opcodes / unmapped memory accesses.
-- Finalise the new `Py6502App` UI shell so it reaches feature parity with
-  the legacy `py6502ui.py` (disassembly panel, register view, memory monitor,
-  binary loader) — then retire the legacy module.
+- Finalise the `Py6502App` UI shell with disassembly panel, register
+  view, memory monitor, and binary loader.
 - Documentation: README + per-package READMEs, in-source comments on the 6502
   core.
 
@@ -63,7 +62,6 @@ wrong here, every later release pays for it.
 
 - [#3](https://github.com/ricky-groenewald/py6502/issues/3) — 6502: Better code comments
 - [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
-- [#51](https://github.com/ricky-groenewald/py6502/issues/51) — Binary source picker: filesystem vs bundled assets, backed by an asset manifest
 
 **Explicit non-goals for v0.1.**
 

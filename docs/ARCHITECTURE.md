@@ -510,17 +510,26 @@ version:
 Detailed in the test plan (see
 [ROADMAP.md](ROADMAP.md)). The architectural summary:
 
+- **Unit tests** under `tests/` cover the `System` build pipeline end
+  to end: config loader (`test_system_loader.py`,
+  `test_system_smoke.py`), validation rules (`test_options.py`,
+  `test_binaries.py`), config writer round-trip (`test_writer.py`),
+  asset manifest (`test_manifest.py`), per-user config paths
+  (`test_paths.py`), runtime binary loading
+  (`test_runtime_load_binary.py`), Apple I region split
+  (`test_apple1_split.py`), and the strict-mode error paths for
+  invalid opcodes (`test_invalid_opcode.py`) and unmapped memory
+  (`test_unmapped_memory.py`).
 - **Klaus 6502 functional tests** and **Bruce Clark decimal tests**
-  are vendored as a git submodule and run as pytest fixtures.
-- The functional-test fixture builds a bare `System` with a single 64
-  KiB RAM region, loads the Klaus binary, sets `PC = 0x0400`, and calls
-  `system.run_cycles(96_247_419)`. Success is asserted by reading `$0200`.
-- A **performance regression test** (`tests/test_performance.py`) runs
-  the same fixture and asserts `cycles/sec > FLOOR_HZ`. This is the
-  canary for accidental Python-loop reintroduction.
-- **Unit tests** cover `BusController` (overlap detection, unmapped
-  access, refcounting) and the config loader (validation rules, source
-  URI resolution).
+  are deferred to v0.3 (see issue
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50)). The
+  upstream binaries are GPL-3.0, so the v0.3 plan fetches them at CI
+  time rather than vendoring them in the wheel; thin runners under
+  `scripts/` will invoke them once that lands.
+- A **performance regression test** whose entire job is to fail loudly
+  if a Python loop sneaks back into the hot path is on the v0.1 punch
+  list and will land alongside the Klaus harness in v0.3 (it needs the
+  Klaus binary as its representative workload).
 
 ---
 

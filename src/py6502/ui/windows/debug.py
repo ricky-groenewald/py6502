@@ -54,6 +54,9 @@ MEM_MONITOR_TAG = "MemMonitor"
 
 
 def _build_opcode_disasm() -> dict[int, str]:
+    # Inverts INSTRUCTION_MAP_6502 (mnemonic → [opcode per addressing
+    # mode]) into a flat opcode → "MNEMONIC mode" lookup. Cheaper than
+    # scanning the source map on every register-panel refresh.
     disasm: dict[int, str] = {}
     for mnemonic, encodings in INSTRUCTION_MAP_6502.items():
         for i, opcode in enumerate(encodings):
@@ -211,6 +214,11 @@ class DebugWindow:
         dpg.set_value(REG_OPCODE_DISASM_TAG, self._opcode_disasm.get(opcode, "???"))
 
     def _update_memory_monitor(self, system: System) -> None:
+        # 256-byte page hex/ASCII dump. Uses System.peek (debug-only,
+        # not cycle-accurate) so the dump is allowed even when the sim
+        # is paused. is_mapped guards against scrolling into an
+        # unmapped page when "Halt on unmapped memory" would otherwise
+        # raise from peek().
         page = self._mem_monitor_page
         base = page << 8
         lines: list[str] = []

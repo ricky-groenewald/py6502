@@ -2,8 +2,9 @@
 
 The Cython simulator half of `py6502`. Everything in this package is on
 the hot path: a cycle-accurate 6502 core, a flat 64K bus, pluggable
-addressable components, and (once v0.1 lands) a `System` façade that
-builds a whole machine from a declarative config file.
+addressable components, and a `System` façade that builds a whole
+machine from a declarative YAML config (see
+[`docs/SYSTEM_CONFIG.md`](../../../docs/SYSTEM_CONFIG.md)).
 
 For the full runtime model see [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md);
 for the config format see [`docs/SYSTEM_CONFIG.md`](../../../docs/SYSTEM_CONFIG.md);
@@ -14,11 +15,11 @@ for the rules Claude follows when editing this package see
 
 ```
 bus/          Component base class, BusController, Memory, EmptyAddress
-cpu/          MOS6502 (cycle-accurate)
+cpu/          MOS6502 (cycle-accurate, precomputed [256][2] dispatch)
 graphics/     TextDisplay + Font (character-grid renderer)
-peripherals/  Apple1; NES components land in v0.2
-system/       System façade — draft, intentionally not built yet
-assets/       Bundled BIOS ROMs, fonts
+peripherals/  Apple1Display, Apple1Keyboard
+system/       System façade, YAML loader, component registry, config dataclasses
+assets/       Bundled BIOS ROMs, fonts, preset YAML configs
 ```
 
 Each subpackage exposes its public API via its own `__init__.py` shim so

@@ -119,8 +119,10 @@ DSP busy-timer.
 ### Accuracy First
 
 Hardware timing is a contract. `Apple1Display`'s DSP bit 7 stays busy
-for exactly one NTSC frame (`16667` cycles at 1 MHz) after a DSP write —
-not "some cycles", not "cleared at the next batch boundary". Test
+for exactly one NTSC frame (≈16,667 cycles at 1 MHz, computed at
+`bind()` time as `round(cpu_hz / 60)` so the timing scales with the
+configured clock — not hardcoded, not "some cycles", not "cleared at
+the next batch boundary"). Test
 `test_dsp_busy_timing_via_system_run_cycles` locks this at batch
 granularity so future refactors can't silently regress it. When you add
 a peripheral with hardware-observable timing, write the equivalent test

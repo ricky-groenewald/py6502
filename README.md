@@ -21,20 +21,25 @@ with an integrated assembler, snippet editor, and sprite tools. See
 ## Status
 
 v0.1 is in active development. It ships a cycle-accurate 6502, the Apple I
-preset, a debug panel with step-level debugging, a system selector, a
-binary loader, and configurable settings.
+preset (with bundled wozmon ROM and Sphere font), a system selector with
+preset / user-config / custom-system pickers, a debug panel with
+step-level debugging and a memory monitor, a runtime binary loader, and
+configurable settings.
 
 ## Prerequisites
 
 - **Python 3.12+**
 - A C toolchain capable of building Cython extensions
-- **Custom DearPyGui build** — py6502 uses a patched DearPyGui with
-  `GL_LINEAR` replaced by `GL_NEAREST` to disable texture filtering for
-  pixel-accurate rendering. Without this patch, the 256x240 framebuffer
-  appears blurry when scaled. See
+- **Custom DearPyGui build (required, BYO)** — py6502 uses a patched
+  DearPyGui with `GL_LINEAR` swapped for `GL_NEAREST` so the 256×240
+  framebuffer scales without the default linear filter blurring it. The
+  patch is a one-line C++ change inside DearPyGui's GL renderer; see
   [DearPyGui#773](https://github.com/hoffstadt/DearPyGui/issues/773) for
-  context and the workaround details (search for the `GL_NEAREST` fix in
-  the issue discussion).
+  the discussion and the snippet to apply. Build DearPyGui from source
+  with the patch and `pip install` the resulting wheel into the same
+  environment you run py6502 from. (DearPyGui is intentionally not
+  declared as a `pip` dependency in `pyproject.toml` so a stock wheel
+  doesn't get pulled in by accident.)
 
 ## Install and run
 
@@ -132,7 +137,7 @@ Before opening a PR:
 2. If your change touches a hot path in `py6502.sim`, re-read the
    performance rules in `src/py6502/sim/CLAUDE.md`. "No Python loops in
    steady state" is non-negotiable.
-3. Run the tests (once the v0.1 harness lands).
+3. Run `pytest`.
 
 ## License
 

@@ -146,7 +146,6 @@ it off:
 - **Do not run `pip install -e .`.** The checklist tells the human to do
   it. Build side-effects from a scaffolding skill cause more problems
   than they solve.
-- **Do not touch the legacy `py6502ui.py`.**
 
 ## References
 
@@ -156,7 +155,10 @@ it off:
   `System`.
 - `docs/SYSTEM_CONFIG.md` — the IaC config format and the component
   registry shape.
-- `src/py6502/sim/peripherals/apple1.pyx` — the canonical example of a
-  peripheral, warts and all. Note that its `clock()` method is a v0.1
-  anti-pattern that will be removed; do not copy that loop shape into
-  new work.
+- `src/py6502/sim/peripherals/apple1_display.pyx` — the canonical
+  reference for a peripheral with hardware-observable timing
+  (DSP busy bit, batch-end tick hook, `bind()` wiring against
+  `cpu_hz`).
+- `src/py6502/sim/peripherals/apple1_keyboard.pyx` — the canonical
+  reference for an input peripheral (FIFO buffer, `send_input` /
+  `clear_input` overrides).

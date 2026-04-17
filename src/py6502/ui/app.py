@@ -25,6 +25,11 @@ from py6502.ui.windows.systemselector import SystemSelectorWindow
 from py6502.ui.windows.video import VideoWindow
 
 
+# Cap on the dt the sim can be asked to advance in a single frame.
+# A long pause (modal dialog, OS hiccup, sleeping laptop) would
+# otherwise translate into a massive catch-up burst and visible stutter.
+# 50 ms ≈ 50,000 cycles at 1 MHz, which is still inside one frame's
+# wall-clock budget at 60 FPS.
 MAX_CATCH_UP_SECONDS = 0.05
 
 
@@ -52,6 +57,8 @@ class Py6502App:
         self._system_name: str = ""
         self.settings: AppSettings = load_settings()
         self._key_buffer: list[int] = []
+        # Pause/error gate for the per-frame loop. Cleared by Pause and
+        # by sim errors; set by Play and by a successful system load.
         self._sim_running = False
         self._sim_error: str | None = None
 
@@ -164,12 +171,21 @@ class Py6502App:
     # Per-frame loop
     # ------------------------------------------------------------------
     def run(self) -> None:
+        # The whole frontend lives inside this loop. Per the
+        # one-coarse-call-per-frame contract (see ui/CLAUDE.md), each
+        # iteration calls ``System.run_for_microseconds`` exactly once —
+        # the sim does the rest in compiled Cython.
         frame_count = 0
-        cycles_accum = 0  # cycles *issued* to the sim — never CPU-bound in v0.1, so ≈ delivered
+        # Cycles *issued* to the sim, not measured back from it. Used
+        # purely for the FPS / Hz readout in the viewport title; the sim
+        # is not CPU-bound at v0.1 cpu_hz so issued ≈ delivered.
+        cycles_accum = 0
         last_tick_time = perf_counter()
         fps_timer = last_tick_time
         while dpg.is_dearpygui_running():
             now = perf_counter()
+            # Wall-clock dt drives the sim, with MAX_CATCH_UP_SECONDS as
+            # the safety cap (see the constant's comment for why).
             dt = min(now - last_tick_time, MAX_CATCH_UP_SECONDS)
             last_tick_time = now
             if self.system is not None:
@@ -179,15 +195,21 @@ class Py6502App:
                     try:
                         self.system.run_for_microseconds(micros)
                     except (InvalidOPCode, UnallocatedAddressError) as exc:
+                        # _on_sim_error flips _sim_running off, so we
+                        # won't re-enter this branch until the user
+                        # acknowledges via Reset/Play.
                         self._on_sim_error(exc)
                     else:
                         cycles_accum += (micros * self.system.cpu_hz) // 1_000_000
                     self._video.update_framebuffer(self.system.get_framebuffer())
+                # Refresh the debug panel even when paused so single-step
+                # buttons reflect the current sim state immediately.
                 self._debug.refresh(self.system)
             dpg.render_dearpygui_frame()
             frame_count += 1
             elapsed = now - fps_timer
             if elapsed >= 2.0:
+                # Throttled viewport-title update (every ~2 s).
                 fps = frame_count / elapsed
                 avg_hz = cycles_accum / elapsed
                 suffix = f" - {self._system_name}" if self._system_name else ""
@@ -207,6 +229,9 @@ class Py6502App:
                 break
 
     def _on_sim_error(self, exc: Exception) -> None:
+        # Hard-stop the sim. Stays stopped until Reset (which clears the
+        # error and re-enables Play); plain Play won't recover, since
+        # the failing instruction is still where PC points.
         self._sim_running = False
         self._sim_error = str(exc)
         self._debug.on_sim_state_changed(running=False, error=str(exc))
