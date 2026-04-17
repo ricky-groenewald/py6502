@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "Cython"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py6502"
+version = "0.1.0"
+description = "A 6502 computer emulator for microchip enthusiasts and retro computing fans."
+authors = [{name = "Ricky Groenewald", email = "6112032+ricky-groenewald@users.noreply.github.com"}]
+license = {file = "LICENSE"}
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+    "platformdirs>=4.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "Topic :: Software Development :: Assemblers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Emulators",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=6.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["py6502*"]
+
+[tool.setuptools.package-data]
+"py6502.sim" = ["assets/**/*"]

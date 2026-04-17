@@ -1,0 +1,718 @@
+"""System selector modal — choose a preset, user YAML, or build a custom system."""
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import dearpygui.dearpygui as dpg
+
+from py6502.sim.system import (
+    BinarySource,
+    ComponentSpec,
+    ConfigError,
+    CpuSpec,
+    MemoryRegion,
+    OptionSpec,
+    SystemConfig,
+    to_yaml_text,
+    write_yaml_file,
+)
+from py6502.sim.manifest import BinaryAsset
+from py6502.sim.system.loader import from_yaml_text
+from py6502.ui.utils import paths
+from py6502.ui.utils.presets import discover_presets, load_user_config_metadata
+from py6502.ui.utils.settings import save_settings
+from py6502.ui.widgets import BinarySourcePicker
+
+if TYPE_CHECKING:
+    from py6502.ui.app import Py6502App
+
+WINDOW_TAG = "SystemSelectorWindow"
+LEFT_PANE_TAG = "SystemSelectorLeftPane"
+PRESET_GROUP_TAG = "SystemSelectorPresetGroup"
+USER_GROUP_TAG = "SystemSelectorUserGroup"
+RIGHT_PANE_TAG = "SystemSelectorRightPane"
+INFO_PANE_TAG = "SystemSelectorInfoPane"
+FILE_DIALOG_TAG = "SystemSelectorFileDialog"
+REMOVE_CONFIRM_TAG = "SystemSelectorRemoveConfirm"
+REMOVE_CONFIRM_MESSAGE_TAG = "SystemSelectorRemoveConfirmMessage"
+
+_SLUG_RE = re.compile(r"[^a-z0-9_]+")
+
+
+def _slugify(name: str) -> str:
+    slug = _SLUG_RE.sub("_", name.strip().lower()).strip("_")
+    return slug or "custom"
+
+
+def _format_hz(hz: int) -> str:
+    if hz >= 1_000_000:
+        mhz = hz / 1_000_000
+        return f"{mhz:g} MHz"
+    if hz >= 1_000:
+        khz = hz / 1_000
+        return f"{khz:g} kHz"
+    return f"{hz} Hz"
+
+
+def _format_bytes(n: int) -> str:
+    if n >= 1024:
+        kib = n / 1024
+        return f"{kib:g} KiB"
+    return f"{n} B"
+
+
+def _unique_config_path(directory, slug: str):
+    """Return ``directory/{slug}.yaml``, appending ``-2``, ``-3``, ... on collision."""
+    candidate = directory / f"{slug}.yaml"
+    if not candidate.exists():
+        return candidate
+    n = 2
+    while True:
+        candidate = directory / f"{slug}-{n}.yaml"
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+CUSTOM_FORM_TAG = "CustomSystemForm"
+CUSTOM_NAME_TAG = "CustomSystemName"
+CUSTOM_CPU_HZ_TAG = "CustomSystemCpuHz"
+CUSTOM_REGIONS_TAG = "CustomSystemRegionsGroup"
+CUSTOM_BINARIES_TAG = "CustomSystemBinariesGroup"
+CUSTOM_DISPLAY_TAG = "CustomSystemDisplay"
+CUSTOM_DISPLAY_ADDR_TAG = "CustomSystemDisplayAddr"
+CUSTOM_INPUT_TAG = "CustomSystemInput"
+CUSTOM_INPUT_ADDR_TAG = "CustomSystemInputAddr"
+CUSTOM_STATUS_TAG = "CustomSystemStatus"
+
+
+class SystemSelectorWindow:
+    def __init__(self, app: Py6502App) -> None:
+        self._app = app
+        self._entries: list[dict] = []
+        self._selected_path: str | None = None
+        self._selected_is_custom = False
+        self._region_counter = 0
+        self._region_ids: list[int] = []
+        self._binary_counter = 0
+        self._binary_ids: list[int] = []
+        self._binary_pickers: dict[int, BinarySourcePicker] = {}
+        # Per-preset option selections, keyed by preset path. Persists across
+        # re-selects so the user's picks stick if they navigate away and back.
+        self._option_values: dict[str, dict[str, object]] = {}
+        self._remove_target_path: str | None = None
+
+    def build(self) -> None:
+        with dpg.window(
+            label="New System",
+            width=920, height=520,
+            show=False, no_resize=True,
+            tag=WINDOW_TAG,
+        ):
+            with dpg.group(horizontal=True):
+                with dpg.child_window(width=280, height=440, tag=LEFT_PANE_TAG):
+                    dpg.add_text("Presets", color=(255, 255, 0))
+                    dpg.add_group(tag=PRESET_GROUP_TAG)
+                    dpg.add_separator()
+                    dpg.add_text("User Configs", color=(255, 255, 0))
+                    dpg.add_group(tag=USER_GROUP_TAG)
+                    dpg.add_button(label="Load from file...", callback=self._on_browse)
+                    dpg.add_separator()
+                    dpg.add_text("Custom", color=(255, 255, 0))
+                    self._build_custom_card()
+
+                with dpg.child_window(width=-1, height=440, tag=RIGHT_PANE_TAG):
+                    with dpg.group(tag=INFO_PANE_TAG, show=True):
+                        dpg.add_text("Select a system from the left panel.")
+                    self._build_custom_form()
+
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Launch", width=120, callback=self._on_launch)
+                dpg.add_button(label="Cancel", width=120, callback=self._on_cancel)
+
+        with dpg.file_dialog(
+            directory_selector=False, show=False,
+            callback=self._on_yaml_file_selected, tag=FILE_DIALOG_TAG,
+            width=700, height=400,
+        ):
+            dpg.add_file_extension(".yaml", color=(0, 255, 0, 255))
+            dpg.add_file_extension(".yml", color=(0, 255, 0, 255))
+
+        with dpg.window(
+            label="Remove user config",
+            modal=True, show=False, no_resize=True,
+            width=420, height=140, tag=REMOVE_CONFIRM_TAG,
+        ):
+            dpg.add_text("Remove ...", tag=REMOVE_CONFIRM_MESSAGE_TAG, wrap=380)
+            dpg.add_text(
+                "The YAML file on disk is not deleted.",
+                color=(180, 180, 180),
+            )
+            dpg.add_spacer(height=8)
+            with dpg.group(horizontal=True):
+                dpg.add_button(label="Remove", width=120, callback=self._on_remove_confirmed)
+                dpg.add_button(label="Cancel", width=120, callback=self._on_remove_cancelled)
+
+    def _build_custom_card(self) -> None:
+        card_theme = self._app.themes.card_button
+        btn = dpg.add_button(
+            label="Custom 6502 System", width=-1,
+            callback=lambda s, a, u: self._on_select_custom(),
+            parent=LEFT_PANE_TAG,
+        )
+        dpg.bind_item_theme(btn, card_theme)
+
+    def _build_custom_form(self) -> None:
+        with dpg.group(tag=CUSTOM_FORM_TAG, parent=RIGHT_PANE_TAG, show=False):
+            dpg.add_text("Custom System Configuration", color=(255, 255, 0))
+            dpg.add_separator()
+
+            with dpg.group(horizontal=True):
+                dpg.add_text("System Name:")
+                dpg.add_input_text(tag=CUSTOM_NAME_TAG, default_value="My System", width=250)
+            with dpg.group(horizontal=True):
+                dpg.add_text("CPU Frequency (Hz):")
+                dpg.add_input_int(
+                    tag=CUSTOM_CPU_HZ_TAG, default_value=1000000,
+                    min_value=1, min_clamped=True, width=200,
+                )
+
+            dpg.add_separator()
+            with dpg.group(horizontal=True):
+                dpg.add_text("Memory Regions", color=(200, 200, 100))
+                dpg.add_button(
+                    label="+ Add Region",
+                    callback=lambda s, a, u: self._add_region(),
+                )
+            dpg.add_group(tag=CUSTOM_REGIONS_TAG)
+
+            dpg.add_separator()
+            with dpg.group(horizontal=True):
+                dpg.add_text("Binary Sources", color=(200, 200, 100))
+                dpg.add_button(
+                    label="+ Add Binary",
+                    callback=lambda s, a, u: self._add_binary(),
+                )
+            dpg.add_group(tag=CUSTOM_BINARIES_TAG)
+
+            dpg.add_separator()
+            dpg.add_text("Peripherals", color=(200, 200, 100))
+            with dpg.group(horizontal=True):
+                dpg.add_text("Display:")
+                dpg.add_combo(
+                    tag=CUSTOM_DISPLAY_TAG,
+                    items=["None", "Apple1Display"],
+                    default_value="Apple1Display", width=140,
+                )
+                dpg.add_text(" @ 0x")
+                dpg.add_input_text(
+                    tag=CUSTOM_DISPLAY_ADDR_TAG, default_value="D012",
+                    width=50, uppercase=True, hexadecimal=True, no_spaces=True,
+                )
+            with dpg.group(horizontal=True):
+                dpg.add_text("Input:  ")
+                dpg.add_combo(
+                    tag=CUSTOM_INPUT_TAG,
+                    items=["None", "Apple1Keyboard"],
+                    default_value="Apple1Keyboard", width=140,
+                )
+                dpg.add_text(" @ 0x")
+                dpg.add_input_text(
+                    tag=CUSTOM_INPUT_ADDR_TAG, default_value="D010",
+                    width=50, uppercase=True, hexadecimal=True, no_spaces=True,
+                )
+
+            dpg.add_spacer(height=4)
+            dpg.add_text("", tag=CUSTOM_STATUS_TAG, wrap=600)
+
+    # ------------------------------------------------------------------
+    # Dynamic memory regions
+    # ------------------------------------------------------------------
+    def _add_region(
+        self, name: str = "", start: str = "0000",
+        size: str = "1000", read_only: bool = False,
+    ) -> None:
+        rid = self._region_counter
+        self._region_counter += 1
+        self._region_ids.append(rid)
+
+        with dpg.group(tag=f"CustomRegion_{rid}", parent=CUSTOM_REGIONS_TAG):
+            with dpg.group(horizontal=True):
+                dpg.add_input_text(
+                    tag=f"RegionName_{rid}",
+                    default_value=name or f"Region{rid}",
+                    width=80, hint="Name",
+                )
+                dpg.add_text("0x")
+                dpg.add_input_text(
+                    tag=f"RegionStart_{rid}", default_value=start,
+                    width=45, uppercase=True, hexadecimal=True, no_spaces=True,
+                )
+                dpg.add_text("Size: 0x")
+                dpg.add_input_text(
+                    tag=f"RegionSize_{rid}", default_value=size,
+                    width=45, uppercase=True, hexadecimal=True, no_spaces=True,
+                )
+                dpg.add_checkbox(
+                    tag=f"RegionRO_{rid}", label="ROM",
+                    default_value=read_only,
+                )
+                dpg.add_button(
+                    label="X", width=24,
+                    callback=lambda s, a, u: self._remove_region(u),
+                    user_data=rid,
+                )
+
+    def _remove_region(self, rid: int) -> None:
+        if rid in self._region_ids:
+            self._region_ids.remove(rid)
+            dpg.delete_item(f"CustomRegion_{rid}")
+
+    def _add_binary(self) -> None:
+        bid = self._binary_counter
+        self._binary_counter += 1
+        self._binary_ids.append(bid)
+
+        picker = BinarySourcePicker(
+            f"CustomBinary{bid}_",
+            path_width=220,
+            combo_width=180,
+            desc_wrap=380,
+            on_asset_selected=lambda asset, _bid=bid: self._prefill_binary_address(_bid, asset),
+        )
+        self._binary_pickers[bid] = picker
+
+        with dpg.group(tag=f"CustomBinary_{bid}", parent=CUSTOM_BINARIES_TAG):
+            picker.build()
+            with dpg.group(horizontal=True):
+                dpg.add_text(" @ 0x")
+                dpg.add_input_text(
+                    tag=f"BinaryAddr_{bid}", default_value="0000",
+                    width=60, uppercase=True, hexadecimal=True, no_spaces=True,
+                )
+                dpg.add_button(
+                    label="X", width=24,
+                    callback=lambda s, a, u: self._remove_binary(u),
+                    user_data=bid,
+                )
+            dpg.add_separator()
+
+    def _prefill_binary_address(self, bid: int, asset: BinaryAsset) -> None:
+        if dpg.does_item_exist(f"BinaryAddr_{bid}"):
+            dpg.set_value(f"BinaryAddr_{bid}", f"{asset.default_address:04X}")
+
+    def _remove_binary(self, bid: int) -> None:
+        if bid in self._binary_ids:
+            picker = self._binary_pickers.pop(bid, None)
+            if picker is not None:
+                picker.destroy()
+            self._binary_ids.remove(bid)
+            dpg.delete_item(f"CustomBinary_{bid}")
+
+    def _reset_custom_form(self) -> None:
+        for rid in list(self._region_ids):
+            self._remove_region(rid)
+        self._region_ids.clear()
+        self._region_counter = 0
+        for bid in list(self._binary_ids):
+            self._remove_binary(bid)
+        self._binary_ids.clear()
+        self._binary_counter = 0
+        self._add_region(name="RAM", start="0000", size="1000")
+
+    # ------------------------------------------------------------------
+    # Show / refresh
+    # ------------------------------------------------------------------
+    def show(self) -> None:
+        self._refresh_entries()
+        dpg.show_item(WINDOW_TAG)
+
+    def _refresh_entries(self) -> None:
+        self._entries.clear()
+        self._selected_path = None
+        self._selected_is_custom = False
+
+        for tag in (PRESET_GROUP_TAG, USER_GROUP_TAG):
+            dpg.delete_item(tag, children_only=True)
+
+        for meta in discover_presets():
+            self._entries.append(meta)
+            self._add_entry_row(meta, PRESET_GROUP_TAG, removable=False)
+
+        valid_paths: list[str] = []
+        for path in self._app.settings.user_config_paths:
+            meta = load_user_config_metadata(path)
+            if meta is not None:
+                self._entries.append(meta)
+                self._add_entry_row(meta, USER_GROUP_TAG, removable=True)
+                valid_paths.append(path)
+        self._app.settings.user_config_paths = valid_paths
+
+        if self._entries:
+            self._on_select(self._entries[0]["path"])
+
+    def _add_entry_row(self, meta: dict, parent_tag: str, *, removable: bool) -> None:
+        card_theme = self._app.themes.card_button
+        path = meta["path"]
+        with dpg.group(horizontal=True, parent=parent_tag):
+            btn = dpg.add_button(
+                label=meta["name"],
+                width=-60 if removable else -1,
+                callback=lambda s, a, u: self._on_select(u),
+                user_data=path,
+            )
+            dpg.bind_item_theme(btn, card_theme)
+            if removable:
+                dpg.add_button(
+                    label="X", width=40,
+                    callback=lambda s, a, u: self._on_remove_user_config(u),
+                    user_data=path,
+                )
+
+    # ------------------------------------------------------------------
+    # Selection
+    # ------------------------------------------------------------------
+    def _on_select(self, path: str) -> None:
+        self._selected_path = path
+        self._selected_is_custom = False
+        dpg.configure_item(INFO_PANE_TAG, show=True)
+        dpg.configure_item(CUSTOM_FORM_TAG, show=False)
+        dpg.delete_item(INFO_PANE_TAG, children_only=True)
+        meta = next((e for e in self._entries if e["path"] == path), None)
+        if meta:
+            dpg.add_text(meta["name"], parent=INFO_PANE_TAG, color=(100, 200, 255))
+            dpg.add_separator(parent=INFO_PANE_TAG)
+            if meta["description"]:
+                dpg.add_text(meta["description"].strip(), parent=INFO_PANE_TAG, wrap=600)
+            if meta["author"]:
+                dpg.add_spacer(parent=INFO_PANE_TAG, height=8)
+                dpg.add_text(f"Author: {meta['author']}", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            if meta["tags"]:
+                tags_str = ", ".join(str(t) for t in meta["tags"])
+                dpg.add_text(f"Tags: {tags_str}", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            # Presets carry no resolved ``config`` object — they're only
+            # the metadata header. User configs do, because the loader
+            # has already parsed them into a SystemConfig.
+            if not meta.get("is_preset", False):
+                self._render_file_line(path)
+                config = meta.get("config")
+                if config is not None:
+                    self._render_hardware_summary(config)
+            options = meta.get("options", ())
+            if options:
+                self._render_options(path, options)
+
+    def _render_file_line(self, path: str) -> None:
+        dpg.add_spacer(parent=INFO_PANE_TAG, height=8)
+        dpg.add_text(f"File: {path}", parent=INFO_PANE_TAG, color=(180, 180, 180), wrap=600)
+
+    def _render_hardware_summary(self, config: SystemConfig) -> None:
+        dpg.add_spacer(parent=INFO_PANE_TAG, height=4)
+        dpg.add_text(
+            f"CPU: {config.cpu.type} @ {_format_hz(config.cpu.hz)}",
+            parent=INFO_PANE_TAG, color=(180, 180, 180),
+        )
+        dpg.add_text("Memory:", parent=INFO_PANE_TAG, color=(180, 180, 180))
+        for region in config.memory:
+            end = region.start + region.size - 1
+            tag = " [ROM]" if region.read_only else ""
+            dpg.add_text(
+                f"  {region.name}  0x{region.start:04X}-0x{end:04X}  "
+                f"({_format_bytes(region.size)}){tag}",
+                parent=INFO_PANE_TAG, color=(180, 180, 180),
+            )
+        if config.binaries:
+            dpg.add_text("Binaries:", parent=INFO_PANE_TAG, color=(180, 180, 180))
+            for bs in config.binaries:
+                label = bs.source
+                if bs.source.startswith("file:"):
+                    label = Path(bs.source[len("file:"):]).name
+                elif bs.source.startswith("resource:"):
+                    label = bs.source[len("resource:"):].rsplit("/", 1)[-1]
+                dpg.add_text(
+                    f"  {label} @ 0x{bs.address:04X}",
+                    parent=INFO_PANE_TAG, color=(180, 180, 180),
+                )
+        if config.display is not None:
+            dpg.add_text(
+                f"Display: {config.display.type} @ 0x{config.display.address:04X}",
+                parent=INFO_PANE_TAG, color=(180, 180, 180),
+            )
+        for spec in config.inputs:
+            dpg.add_text(
+                f"Input:   {spec.type} @ 0x{spec.address:04X}",
+                parent=INFO_PANE_TAG, color=(180, 180, 180),
+            )
+
+    def _render_options(self, path: str, options: tuple[OptionSpec, ...]) -> None:
+        """Render a widget per preset option; user changes update self._option_values."""
+        dpg.add_spacer(parent=INFO_PANE_TAG, height=12)
+        dpg.add_text("Options", parent=INFO_PANE_TAG, color=(255, 255, 0))
+        dpg.add_separator(parent=INFO_PANE_TAG)
+        # First time we render this preset's options in the current
+        # selector session, seed from whatever the user picked last
+        # time (persisted in settings.last_option_values keyed by path).
+        # Subsequent re-selects in the same session keep the in-memory
+        # picks so the user can toggle previews without losing state.
+        if path not in self._option_values:
+            persisted = self._app.settings.last_option_values.get(path, {})
+            self._option_values[path] = dict(persisted)
+        selections = self._option_values[path]
+        for opt in options:
+            current = selections.get(opt.id, opt.default)
+            selections[opt.id] = current
+            with dpg.group(horizontal=True, parent=INFO_PANE_TAG):
+                dpg.add_text(f"{opt.label}:")
+                if opt.kind == "enum":
+                    labels = [c.label for c in opt.choices]
+                    current_label = next(
+                        (c.label for c in opt.choices if c.value == current),
+                        labels[0],
+                    )
+                    dpg.add_combo(
+                        items=labels, default_value=current_label, width=180,
+                        callback=self._on_enum_option_changed,
+                        user_data=(path, opt),
+                    )
+                elif opt.kind == "int":
+                    kwargs: dict = {"default_value": int(current), "width": 140}
+                    if opt.min is not None:
+                        kwargs["min_value"] = opt.min
+                        kwargs["min_clamped"] = True
+                    if opt.max is not None:
+                        kwargs["max_value"] = opt.max
+                        kwargs["max_clamped"] = True
+                    dpg.add_input_int(
+                        callback=self._on_int_option_changed,
+                        user_data=(path, opt),
+                        **kwargs,
+                    )
+                elif opt.kind == "hex":
+                    dpg.add_text("0x")
+                    dpg.add_input_text(
+                        default_value=f"{int(current):X}",
+                        width=100, uppercase=True, hexadecimal=True, no_spaces=True,
+                        callback=self._on_hex_option_changed,
+                        user_data=(path, opt),
+                    )
+                elif opt.kind == "bool":
+                    dpg.add_checkbox(
+                        default_value=bool(current),
+                        callback=self._on_bool_option_changed,
+                        user_data=(path, opt),
+                    )
+            if opt.description:
+                dpg.add_text(f"  {opt.description}", parent=INFO_PANE_TAG, color=(150, 150, 150), wrap=560)
+
+    def _on_enum_option_changed(self, sender: int, app_data: str, user_data: tuple) -> None:
+        path, opt = user_data
+        for choice in opt.choices:
+            if choice.label == app_data:
+                self._option_values.setdefault(path, {})[opt.id] = choice.value
+                return
+
+    def _on_int_option_changed(self, sender: int, app_data: int, user_data: tuple) -> None:
+        path, opt = user_data
+        self._option_values.setdefault(path, {})[opt.id] = int(app_data)
+
+    def _on_hex_option_changed(self, sender: int, app_data: str, user_data: tuple) -> None:
+        path, opt = user_data
+        try:
+            self._option_values.setdefault(path, {})[opt.id] = int(app_data, 16) if app_data else opt.default
+        except ValueError:
+            pass  # keep last good value; let validation catch bad input at launch
+
+    def _on_bool_option_changed(self, sender: int, app_data: bool, user_data: tuple) -> None:
+        path, opt = user_data
+        self._option_values.setdefault(path, {})[opt.id] = bool(app_data)
+
+    def _on_select_custom(self) -> None:
+        self._selected_path = None
+        self._selected_is_custom = True
+        dpg.configure_item(INFO_PANE_TAG, show=False)
+        dpg.configure_item(CUSTOM_FORM_TAG, show=True)
+        dpg.set_value(CUSTOM_STATUS_TAG, "")
+        self._reset_custom_form()
+
+    def _on_remove_user_config(self, path: str) -> None:
+        """X button: open confirmation modal, don't remove yet."""
+        if path not in self._app.settings.user_config_paths:
+            return
+        self._remove_target_path = path
+        meta = next((e for e in self._entries if e["path"] == path), None)
+        name = meta["name"] if meta else Path(path).name
+        dpg.set_value(REMOVE_CONFIRM_MESSAGE_TAG, f"Remove \"{name}\" from the list?")
+        dpg.show_item(REMOVE_CONFIRM_TAG)
+
+    def _on_remove_confirmed(self) -> None:
+        path = self._remove_target_path
+        self._remove_target_path = None
+        dpg.hide_item(REMOVE_CONFIRM_TAG)
+        if path and path in self._app.settings.user_config_paths:
+            self._app.settings.user_config_paths.remove(path)
+            save_settings(self._app.settings)
+            self._refresh_entries()
+
+    def _on_remove_cancelled(self) -> None:
+        self._remove_target_path = None
+        dpg.hide_item(REMOVE_CONFIRM_TAG)
+
+    # ------------------------------------------------------------------
+    # Launch
+    # ------------------------------------------------------------------
+    def _on_launch(self) -> None:
+        if self._selected_is_custom:
+            self._launch_custom()
+        elif self._selected_path is not None:
+            dpg.hide_item(WINDOW_TAG)
+            option_values = self._option_values.get(self._selected_path, {})
+            self._app._load_system(self._selected_path, option_values=option_values)
+
+    def _launch_custom(self) -> None:
+        name = dpg.get_value(CUSTOM_NAME_TAG) or "Custom System"
+        cpu_hz = dpg.get_value(CUSTOM_CPU_HZ_TAG)
+
+        memory = self._collect_regions()
+        if memory is None:
+            return
+        if not memory:
+            self._set_status("Add at least one memory region", error=True)
+            return
+
+        binaries = self._collect_binaries()
+        if binaries is None:
+            return
+
+        display = self._collect_display()
+        if display is False:
+            return
+
+        inputs = self._collect_inputs()
+        if inputs is False:
+            return
+
+        slug = _slugify(name)
+        config = SystemConfig(
+            version=1, id=slug, name=name,
+            description="Custom system configuration",
+            cpu=CpuSpec(type="MOS6502", hz=cpu_hz),
+            memory=tuple(memory),
+            display=display if display else None,
+            inputs=tuple(inputs) if inputs else (),
+            binaries=binaries,
+        )
+
+        # Round-trip the in-memory config through the loader before
+        # writing to disk. This is the only path that runs Rule 13
+        # (binary sources cover a contiguous mapped range with no gaps
+        # or overlap — see docs/SYSTEM_CONFIG.md §8); System.__init__
+        # trusts that the loader already enforced it. Catching the
+        # ConfigError here means the user sees the validation message
+        # in the form's status line instead of a cryptic load failure
+        # the next time they pick this preset.
+        target_dir = paths.user_configs_dir()
+        try:
+            from_yaml_text(to_yaml_text(config), base_dir=target_dir)
+        except ConfigError as exc:
+            self._set_status(str(exc), error=True)
+            return
+
+        target = _unique_config_path(target_dir, slug)
+        try:
+            write_yaml_file(config, target)
+        except OSError as exc:
+            self._set_status(f"Could not save config: {exc}", error=True)
+            return
+
+        target_str = str(target)
+        if target_str not in self._app.settings.user_config_paths:
+            self._app.settings.user_config_paths.append(target_str)
+            save_settings(self._app.settings)
+
+        dpg.hide_item(WINDOW_TAG)
+        self._app._load_system(target_str)
+
+    def _collect_regions(self) -> list[MemoryRegion] | None:
+        regions: list[MemoryRegion] = []
+        for rid in self._region_ids:
+            r_name = dpg.get_value(f"RegionName_{rid}").strip()
+            if not r_name:
+                self._set_status("A memory region has no name", error=True)
+                return None
+            try:
+                r_start = int(dpg.get_value(f"RegionStart_{rid}"), 16)
+                r_size = int(dpg.get_value(f"RegionSize_{rid}"), 16)
+            except ValueError:
+                self._set_status(f"Invalid hex in region '{r_name}'", error=True)
+                return None
+            if r_size == 0:
+                self._set_status(f"Region '{r_name}' has zero size", error=True)
+                return None
+            r_ro = dpg.get_value(f"RegionRO_{rid}")
+            regions.append(MemoryRegion(
+                name=r_name, start=r_start, size=r_size, read_only=r_ro,
+            ))
+        return regions
+
+    def _collect_binaries(self) -> tuple[BinarySource, ...] | None:
+        out: list[BinarySource] = []
+        for bid in self._binary_ids:
+            picker = self._binary_pickers[bid]
+            if picker.is_empty():
+                self._set_status("A binary source has no file selected", error=True)
+                return None
+            try:
+                addr = int(dpg.get_value(f"BinaryAddr_{bid}"), 16)
+            except ValueError:
+                self._set_status("Invalid hex address for a binary", error=True)
+                return None
+            uri, _prefill = picker.get_source()
+            out.append(BinarySource(source=uri, address=addr))
+        return tuple(out)
+
+    def _collect_display(self) -> ComponentSpec | None | bool:
+        display_type = dpg.get_value(CUSTOM_DISPLAY_TAG)
+        if display_type == "None":
+            return None
+        try:
+            addr = int(dpg.get_value(CUSTOM_DISPLAY_ADDR_TAG), 16)
+        except ValueError:
+            self._set_status("Invalid display address", error=True)
+            return False
+        return ComponentSpec(type=display_type, address=addr)
+
+    def _collect_inputs(self) -> list[ComponentSpec] | bool:
+        input_type = dpg.get_value(CUSTOM_INPUT_TAG)
+        if input_type == "None":
+            return []
+        try:
+            addr = int(dpg.get_value(CUSTOM_INPUT_ADDR_TAG), 16)
+        except ValueError:
+            self._set_status("Invalid input address", error=True)
+            return False
+        return [ComponentSpec(type=input_type, address=addr)]
+
+    def _set_status(self, text: str, *, error: bool = False) -> None:
+        dpg.set_value(CUSTOM_STATUS_TAG, text)
+        dpg.configure_item(CUSTOM_STATUS_TAG, color=(255, 80, 80) if error else (80, 255, 80))
+
+    # ------------------------------------------------------------------
+    # File dialogs
+    # ------------------------------------------------------------------
+    def _on_cancel(self) -> None:
+        dpg.hide_item(WINDOW_TAG)
+
+    def _on_browse(self) -> None:
+        dpg.show_item(FILE_DIALOG_TAG)
+
+    def _on_yaml_file_selected(self, sender: int, app_data: dict, user_data: object) -> None:
+        file_path = app_data.get("file_path_name", "")
+        if not file_path:
+            return
+        if file_path not in self._app.settings.user_config_paths:
+            self._app.settings.user_config_paths.append(file_path)
+            save_settings(self._app.settings)
+        self._refresh_entries()
+        self._on_select(file_path)

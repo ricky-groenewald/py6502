@@ -1,0 +1,7 @@
+version: 1
+binaries:
+  - name: apple1-wozmon
+    description: Apple 1 Wozmon monitor
+    source: resource:py6502.sim.assets.bios/apple1-wozmon.bin
+    default_address: 0xFF00
+    tags: [apple1, monitor]

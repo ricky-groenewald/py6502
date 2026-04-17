@@ -1,0 +1,21 @@
+*.pyc
+*.pyd
+*.pyo
+__pycache__
+*.c
+*.so
+*.o
+*.ini
+py6502_settings.json
+
+*.egg
+*.egg-info
+.*cache*/
+*venv*/
+
+.claude/settings.local.json
+
+# Local profiling artefacts (sample, xctrace, cython -a HTML)
+profiles/
+*.trace
+*_annotated.html
