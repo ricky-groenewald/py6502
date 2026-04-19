@@ -1,4 +1,5 @@
 from libc.stdio cimport *
+from cpython.array cimport array
 
 cdef class Font:
     cdef bint* character_set
@@ -36,8 +37,16 @@ cdef class TextDisplay:
     cdef unsigned char _character_max_rows
     # _colors[i] is RGBA. i=0 background, i=1 foreground, i=2 cursor.
     cdef float[3][4] _colors
+    # RGBA output buffer (y-major, x-minor, RGBA last). Allocated once
+    # and mutated in place so the frontend's bound raw texture never
+    # sees a dangling or reassigned pointer. ``render_framebuffer``
+    # ticks the cursor and flattens ``_screen_buffer`` into it once per
+    # UI frame; ``get_screen_buffer`` is a pure ref getter.
+    cdef array _rgba_buffer
+    cdef float[::1] _rgba_view
 
-    cdef list get_screen_buffer(self)
+    cdef object get_screen_buffer(self)
+    cdef void render_framebuffer(self)
     cdef void set_cursor(self, unsigned char character, float[4] color, unsigned char cursor_mode)
     cdef void backspace(self)
     cdef void place_character(self, unsigned char character)

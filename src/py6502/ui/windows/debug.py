@@ -275,7 +275,6 @@ class DebugWindow:
         except (InvalidOPCode, UnallocatedAddressError) as exc:
             self._app._on_sim_error(exc)
             return
-        self._app._video.update_framebuffer(self._app.system.get_framebuffer())
         self.refresh(self._app.system)
 
     def _cycle_step_handler(self) -> None:
@@ -286,5 +285,4 @@ class DebugWindow:
         except (InvalidOPCode, UnallocatedAddressError) as exc:
             self._app._on_sim_error(exc)
             return
-        self._app._video.update_framebuffer(self._app.system.get_framebuffer())
         self.refresh(self._app.system)

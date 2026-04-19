@@ -142,7 +142,14 @@ cdef class System:
         return self._cpu_hz
 
     cpdef void run_cycles(self, unsigned long cycles) except *:
-        """Run exactly ``cycles`` CPU cycles. The hot path for the UI."""
+        """
+        Run exactly ``cycles`` CPU cycles. The low-level primitive — no
+        display sync, so tests and internal callers pay nothing for the
+        per-frame render. The frontend does not call this on the hot
+        path; it calls ``run_for_microseconds`` (which syncs) or the
+        debug-only ``step_cycle`` / ``step_instruction`` (which also
+        sync).
+        """
         if cycles:
             (<BusController>self._buses["main"]).run_cycles(cycles)
 
@@ -151,14 +158,22 @@ cdef class System:
         Run for the wall-clock elapsed time the frontend observed this
         frame. Converted to cycles against the configured ``cpu_hz`` so
         the effective frequency stays locked regardless of UI refresh
-        rate.
+        rate. Triggers the once-per-frame display render at the end, so
+        the RGBA buffer the frontend's raw texture is bound to reflects
+        the latest sim state before DPG re-uploads to the GPU.
         """
         if microseconds:
             (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
+        self.sync_display()
 
     cpdef unsigned long step_cycle(self) except *:
-        """Advance one CPU cycle. Used by the debug panel's Cycle button."""
+        """
+        Advance one CPU cycle. Used by the debug panel's Cycle button.
+        Syncs the display so single-step actions are visible in the
+        video window without waiting for the next frame tick.
+        """
         (<BusController>self._buses["main"]).run_cycles(1)
+        self.sync_display()
         return 1
 
     cpdef unsigned long step_instruction(self) except *:
@@ -169,7 +184,9 @@ cdef class System:
         least one of those two registers changes". The 16-cycle cap is
         a safety net: the longest legal 6502 instruction takes 7 cycles
         (RTI + page-cross variants), so anything past 16 means we've
-        somehow lost the marker and should bail rather than spin.
+        somehow lost the marker and should bail rather than spin. Syncs
+        the display on the way out for the same reason ``step_cycle``
+        does.
         """
         cdef BusController bus = <BusController>self._buses["main"]
         cdef Registers start = bus.get_registers()
@@ -185,6 +202,7 @@ cdef class System:
                 break
             if cycles > 16:
                 break
+        self.sync_display()
         return cycles
 
     cpdef void reset(self):
@@ -243,13 +261,28 @@ cdef class System:
     cpdef object get_framebuffer(self):
         """
         Return the display's RGBA buffer (or None if there's no display).
-        The buffer is owned by the display peripheral and mutated in
-        place — the frontend reads from it directly, never copies it
-        per frame.
+        Pure reference getter: the buffer is owned by the display
+        peripheral and stays pinned for the life of the System, so the
+        frontend can safely bind a DearPyGui raw texture to it once
+        and never re-read this method on the hot path. The render into
+        that buffer happens in ``sync_display`` (invoked at the end of
+        every coarse frontend call).
         """
         if self._display is None:
             return None
         return (<Component>self._display).get_framebuffer()
+
+    cpdef void sync_display(self):
+        """
+        Tell the display peripheral to refresh its RGBA buffer. Invoked
+        automatically at the end of ``run_for_microseconds``,
+        ``step_cycle``, and ``step_instruction`` so the frontend never
+        has to call it. Exposed publicly so tests and one-off frontend
+        paths (e.g. the initial-paint on system load) can force a
+        render without advancing any cycles.
+        """
+        if self._display is not None:
+            (<Component>self._display).render_framebuffer()
 
     cpdef void register_tick_hook(self, object component):
         """

@@ -60,8 +60,7 @@ wrong here, every later release pays for it.
 
 **Open issues in GitHub milestone "v0.1 Release - First 6502 release":**
 
-- [#3](https://github.com/ricky-groenewald/py6502/issues/3) — 6502: Better code comments
-- [#7](https://github.com/ricky-groenewald/py6502/issues/7) — Add README files to SIM
+_None — milestone closed._
 
 **Explicit non-goals for v0.1.**
 
@@ -132,6 +131,21 @@ divider-aware before it's useful.
 - [#32](https://github.com/ricky-groenewald/py6502/issues/32) — Multiprocessing sim/frontend split
 - [#33](https://github.com/ricky-groenewald/py6502/issues/33) — Frontend library re-evaluation (DearPyGui friction)
 - [#40](https://github.com/ricky-groenewald/py6502/issues/40) — Create Input / Display abstracts
+- [#50](https://github.com/ricky-groenewald/py6502/issues/50) — Wire Klaus + Bruce Clark tests into pytest with perf reporting
+- [#62](https://github.com/ricky-groenewald/py6502/issues/62) — [BUG] BusController corrupts bus snapshot on debug peek — add peek/poke bypass
+- [#63](https://github.com/ricky-groenewald/py6502/issues/63) — Gate debug-monitor refresh to pause/step events
+- [#64](https://github.com/ricky-groenewald/py6502/issues/64) — v0.2 dedup + dead-code + doc-drift cleanup pass
+- [#65](https://github.com/ricky-groenewald/py6502/issues/65) — v0.2 performance audit + baseline
+- [#66](https://github.com/ricky-groenewald/py6502/issues/66) — R2A03 CPU variant (no-BCD + OAM/DMC DMA stall)
+- [#67](https://github.com/ricky-groenewald/py6502/issues/67) — NMI / IRQ wiring for NES peripherals
+- [#68](https://github.com/ricky-groenewald/py6502/issues/68) — PPU bus: VRAM, nametable mirroring, palette RAM
+- [#69](https://github.com/ricky-groenewald/py6502/issues/69) — PixelDisplay graphics primitive (bitmap framebuffer)
+- [#70](https://github.com/ricky-groenewald/py6502/issues/70) — PPU register window on main bus ($2000-$3FFF + $4014)
+- [#71](https://github.com/ricky-groenewald/py6502/issues/71) — Mapper component contract (runtime bank-switching shape)
+- [#72](https://github.com/ricky-groenewald/py6502/issues/72) — Bundled NES preset(s) + asset manifest entry
+- [#73](https://github.com/ricky-groenewald/py6502/issues/73) — nestest CPU conformance runner in CI
+- [#74](https://github.com/ricky-groenewald/py6502/issues/74) — PAL NES sim-side support
+- [#75](https://github.com/ricky-groenewald/py6502/issues/75) — Save states (snapshot + restore emulator state)
 
 #2 and #4 are "v0.1 foundation" issues that live in the v0.2 milestone only
 because pytest/CI work will grow substantially as NES features land. The
@@ -173,7 +187,6 @@ fixture scaffolding itself ships in v0.1; v0.2 expands it.
 - [#21](https://github.com/ricky-groenewald/py6502/issues/21) — Customize and package dearpygui/imgui
 - [#24](https://github.com/ricky-groenewald/py6502/issues/24) — Enable saving of code snippets
 - [#26](https://github.com/ricky-groenewald/py6502/issues/26) — Character Map / Sprite Editors
-- [#50](https://github.com/ricky-groenewald/py6502/issues/50) — Wire Klaus + Bruce Clark tests into pytest with perf reporting
 
 ---
 

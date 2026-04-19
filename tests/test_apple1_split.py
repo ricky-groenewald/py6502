@@ -31,19 +31,35 @@ def test_keyboard_fifo_and_kbdcr_clear_on_read(apple1_system) -> None:
 
 
 def test_display_write_renders_to_framebuffer(apple1_system) -> None:
+    # The RGBA buffer is only flattened from the index buffer during
+    # ``sync_display`` (invoked at the end of every coarse frontend
+    # call). Pokes alone don't trigger it, so we call it explicitly
+    # here — the same thing the UI does automatically after
+    # run_for_microseconds / step_cycle / step_instruction.
     assert apple1_system.peek(0xD012) == 0x00
     apple1_system.poke(0xD012, ord("A"))
     assert apple1_system.peek(0xD012) == 0x80
 
+    apple1_system.sync_display()
     fb = apple1_system.get_framebuffer()
     nonzero = sum(1 for v in fb if v > 0.01)
     assert nonzero > 0, "expected the framebuffer to have non-zero pixels after DSP write"
 
 
 def test_display_framebuffer_shape(apple1_system) -> None:
+    # Display contract: get_framebuffer() returns a preallocated
+    # buffer-protocol object of RGBA floats (see
+    # ``Component.get_framebuffer`` docstring). The frontend binds a
+    # DearPyGui raw texture onto this buffer, so it must stay the same
+    # object for the life of the display — no per-call allocations.
     fb = apple1_system.get_framebuffer()
-    assert isinstance(fb, list)
-    assert len(fb) == 256 * 240 * 4
+    assert fb is not None
+    mv = memoryview(fb)
+    assert mv.format == "f"
+    assert len(mv) == 256 * 240 * 4
+    # The buffer is owned by the peripheral; consecutive calls must
+    # return the same object.
+    assert apple1_system.get_framebuffer() is fb
 
 
 def test_dsp_busy_timing_via_system_run_cycles() -> None:

@@ -23,6 +23,7 @@ cdef class System:
     cpdef Registers get_registers(self)
     cpdef void set_registers(self, Registers registers)
     cpdef object get_framebuffer(self)
+    cpdef void sync_display(self)
     cpdef void register_tick_hook(self, object component)
     cpdef unsigned char peek(self, unsigned short address)
     cpdef unsigned char poke(self, unsigned short address, unsigned char data)

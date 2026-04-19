@@ -155,7 +155,15 @@ class Py6502App:
         self._sim_running = True
         self._debug.on_reset()
         self._debug.on_sim_state_changed(running=True)
-        self._video.update_framebuffer(self.system.get_framebuffer())
+        # Rebind the raw texture onto the new display's RGBA buffer.
+        # Every subsequent frame reads directly from that buffer, so
+        # no per-frame copy is needed. sync_display populates the buffer
+        # with the current sim state (cursor visible, reset banner,
+        # etc.) so the very first rendered frame isn't all zeros —
+        # run_for_microseconds would also do this at the next tick, but
+        # that's one full frame of blank we'd rather not see.
+        self._video.bind_system_framebuffer(self.system.get_framebuffer())
+        self.system.sync_display()
         self._debug.refresh(self.system)
         dpg.focus_item(VideoWindow.VIDEO_WINDOW_TAG)
 
@@ -201,9 +209,11 @@ class Py6502App:
                         self._on_sim_error(exc)
                     else:
                         cycles_accum += (micros * self.system.cpu_hz) // 1_000_000
-                    self._video.update_framebuffer(self.system.get_framebuffer())
                 # Refresh the debug panel even when paused so single-step
-                # buttons reflect the current sim state immediately.
+                # buttons reflect the current sim state immediately. The
+                # video texture is bound to the sim's RGBA buffer by
+                # _wire_system, so no explicit upload is needed here —
+                # DPG re-uploads from the bound memory on render.
                 self._debug.refresh(self.system)
             dpg.render_dearpygui_frame()
             frame_count += 1
@@ -268,7 +278,6 @@ class Py6502App:
         self._sim_error = None
         self._debug.on_reset()
         self._play_handler()
-        self._video.update_framebuffer(self.system.get_framebuffer())
         self._debug.refresh(self.system)
         dpg.focus_item(VideoWindow.VIDEO_WINDOW_TAG)
 

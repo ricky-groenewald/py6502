@@ -97,9 +97,31 @@ cdef class Component:
         """
         pass
 
-    cdef list get_framebuffer(self):
-        """Return an RGBA float list for display components. Default: None."""
+    cdef object get_framebuffer(self):
+        """
+        Return the display's RGBA float buffer. Default: None.
+
+        Concrete displays return a preallocated ``array.array('f')`` (or
+        equivalent buffer-protocol object) that they own and mutate in
+        place. The frontend binds a DearPyGui raw texture directly to
+        this buffer at system-load time; subsequent reads are pure
+        pointer returns (no allocation, no copy). The per-frame
+        refresh happens in ``render_framebuffer``, not here.
+        """
         return None
+
+    cdef void render_framebuffer(self):
+        """
+        Per-UI-frame display-refresh hook. Default: no-op.
+
+        Called once per coarse frontend call (``run_for_microseconds``,
+        ``step_cycle``, ``step_instruction``) via ``System.sync_display``,
+        which is the single chokepoint where we do the index-buffer →
+        RGBA flatten. Components that own a framebuffer override this
+        to update the buffer their ``get_framebuffer`` returns; the
+        buffer object itself stays pinned for the life of the display.
+        """
+        pass
 
     cdef bint send_input(self, unsigned char char_):
         """Accept an input byte (e.g. a key press). Default: False (ignored)."""
