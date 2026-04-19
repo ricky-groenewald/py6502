@@ -6,9 +6,23 @@ The Font wraps a tiny custom binary format we use to pack pixel-perfect
 glyphs out of historical font ROMs. The TextDisplay treats its
 ``_screen_buffer`` as a circular row buffer so a scroll-up is just an
 index rebase, not a memcpy.
+
+The output contract is split in two:
+
+- ``render_framebuffer`` flattens the index buffer into a preallocated
+  RGBA float buffer once per UI frame. The frontend never calls this
+  directly — ``System.sync_display`` invokes it at the end of each
+  coarse frontend call.
+- ``get_screen_buffer`` is a pure reference getter. The frontend binds
+  a DearPyGui raw texture to the returned buffer once at system load
+  and re-reads the same memory every GPU upload — no Python-level
+  copies, no allocations per frame.
 """
+from cython cimport boundscheck, wraparound
 from libc.stdio cimport *
 from libc.stdlib cimport malloc, free
+from cpython.array cimport array
+import array as _pyarray
 
 cdef class Font:
     """
@@ -86,9 +100,15 @@ cdef class TextDisplay:
     State invariants worth knowing before touching this:
 
     - ``_screen_buffer[y][x]`` holds a *colour index* (0/1/2 — see
-      ``_colors``), not a packed RGBA value. The RGBA expansion only
-      happens in ``get_screen_buffer`` so we never carry around a 4×
-      buffer.
+      ``_colors``), not a packed RGBA value. Index-land is 1 byte per
+      pixel; the 4× RGBA expansion happens once per frame in
+      ``get_screen_buffer`` and lands in ``_rgba_buffer``.
+    - ``_rgba_buffer`` is the single, stable RGBA float buffer the
+      frontend's DearPyGui raw texture is bound to. Allocated once in
+      ``__init__``, mutated in place by ``get_screen_buffer``, and
+      never reassigned — rebinding it would break the texture.
+      ``_rgba_view`` is a ``float[::1]`` memoryview over the same
+      storage for cdef-speed writes.
     - ``_cursor_pos_(x|y)`` are *character* coordinates inside the
       visible grid, **not** pixel coordinates.
     - ``_start_cursor_row`` is the character-row index that the renderer
@@ -130,16 +150,41 @@ cdef class TextDisplay:
         self._character_max_cols = (resolution_x - (padding_x * 2)) // font.width
         self._character_max_rows = (resolution_y - (padding_y * 2)) // font.height
 
+        # The RGBA buffer the frontend will bind its raw texture to.
+        # Stays pinned at this address for the life of the display;
+        # ``get_screen_buffer`` mutates it in place every frame.
+        # array.array('f') gives us a buffer-protocol object DearPyGui
+        # accepts directly, with no numpy dependency. The list-times-N
+        # seed is a one-time init cost, not hot path.
+        self._rgba_buffer = _pyarray.array('f', [0.0] * (resolution_x * resolution_y * 4))
+        self._rgba_view = self._rgba_buffer
+
         self.clear_screen()
 
     def __dealloc__(self):
         if self._cursor_pixel_map:
             free(self._cursor_pixel_map)
 
-    cdef list get_screen_buffer(self):
-        # Tick the cursor blink (frame-paced, not cycle-paced — a "frame"
-        # here is one call to this method, which the frontend invokes once
-        # per UI frame).
+    cdef object get_screen_buffer(self):
+        # Pure reference getter. The frontend binds its DearPyGui raw
+        # texture to this buffer once at system load; the actual render
+        # into it happens in ``render_framebuffer`` during the sim's
+        # per-frame call. Callers must not rely on this method to
+        # refresh pixels — it only returns the pinned buffer object.
+        return self._rgba_buffer
+
+    @boundscheck(False)
+    @wraparound(False)
+    cdef void render_framebuffer(self):
+        # One-per-UI-frame render: tick the cursor blink, re-stamp the
+        # cursor glyph into the index buffer, then flatten the index
+        # buffer into the preallocated RGBA output. Invoked by
+        # ``System.sync_display`` at the end of each coarse frontend
+        # call (``run_for_microseconds`` / ``step_cycle`` /
+        # ``step_instruction``) — never per CPU cycle.
+
+        # Cursor blink is frame-paced, not cycle-paced: 30 render calls
+        # per phase ≈ half a second at 60 FPS.
         if self._cursor_mode == 1:
             self._cursor_blink_timer += 1
             if self._cursor_blink_timer == 30:
@@ -148,18 +193,53 @@ cdef class TextDisplay:
 
         self.redraw_cursor()
 
-        # Flatten the buffer into a single RGBA-per-pixel list in screen
-        # order: top padding band, then the *unwrapped* content (the
-        # post-scroll rows that should appear at the top, then the
-        # pre-scroll rows that should appear below them), then bottom
-        # padding band. The two content slices together implement the
-        # circular-buffer rotation without ever moving any pixels.
-        return (
-            [rgba_val for _ in range(self._pixel_padding_y) for _ in range(self._resolution_x) for rgba_val in self._colors[0][:4]] # Top padding band
-            + [rgba_val for row in range(self._start_cursor_row * self._font.height + self._pixel_padding_y, self._resolution_y - self._pixel_padding_y) for col in range(self._resolution_x) for rgba_val in self._colors[self._screen_buffer[row][col]][:4]] # Rows from the scroll origin down to the bottom of the content area
-            + [rgba_val for row in range(self._pixel_padding_y, self._start_cursor_row * self._font.height + self._pixel_padding_y) for col in range(self._resolution_x) for rgba_val in self._colors[self._screen_buffer[row][col]][:4]] # Rows from the top of the content area up to the scroll origin
-            + [rgba_val for _ in range(self._pixel_padding_y) for _ in range(self._resolution_x) for rgba_val in self._colors[0][:4]] # Bottom padding band (same colour as top)
-        )
+        # Flatten the index buffer into the preallocated RGBA output in
+        # screen order: top padding band, then the *unwrapped* content
+        # (rotated so the logical top-of-screen lands first regardless
+        # of where ``_start_cursor_row`` currently sits), then bottom
+        # padding band. The modular ``source_row`` arithmetic implements
+        # the circular-buffer rotation without moving any pixels. All
+        # the per-pixel work is cdef — no Python allocations, no list
+        # comprehensions, no object dispatch.
+        cdef unsigned int res_x = self._resolution_x
+        cdef unsigned int res_y = self._resolution_y
+        cdef unsigned int padding_y = self._pixel_padding_y
+        cdef unsigned int scroll_pixel = self._start_cursor_row * self._font.height
+        cdef unsigned int content_rows = res_y - 2 * padding_y
+        cdef unsigned int y_out, x, content_y, source_row
+        cdef unsigned char color_idx
+        cdef Py_ssize_t out_idx = 0
+        cdef float bg0 = self._colors[0][0]
+        cdef float bg1 = self._colors[0][1]
+        cdef float bg2 = self._colors[0][2]
+        cdef float bg3 = self._colors[0][3]
+
+        for y_out in range(padding_y):
+            for x in range(res_x):
+                self._rgba_view[out_idx] = bg0
+                self._rgba_view[out_idx + 1] = bg1
+                self._rgba_view[out_idx + 2] = bg2
+                self._rgba_view[out_idx + 3] = bg3
+                out_idx += 4
+
+        for y_out in range(padding_y, res_y - padding_y):
+            content_y = y_out - padding_y
+            source_row = padding_y + (content_y + scroll_pixel) % content_rows
+            for x in range(res_x):
+                color_idx = self._screen_buffer[source_row][x]
+                self._rgba_view[out_idx] = self._colors[color_idx][0]
+                self._rgba_view[out_idx + 1] = self._colors[color_idx][1]
+                self._rgba_view[out_idx + 2] = self._colors[color_idx][2]
+                self._rgba_view[out_idx + 3] = self._colors[color_idx][3]
+                out_idx += 4
+
+        for y_out in range(res_y - padding_y, res_y):
+            for x in range(res_x):
+                self._rgba_view[out_idx] = bg0
+                self._rgba_view[out_idx + 1] = bg1
+                self._rgba_view[out_idx + 2] = bg2
+                self._rgba_view[out_idx + 3] = bg3
+                out_idx += 4
 
     cdef void backspace(self):
         # Refuse to backspace past the start of the current input line

@@ -11,6 +11,7 @@ cdef class Component:
     cdef int write(self, unsigned short address, unsigned char data) except -1
     cdef void bind(self, object system)
     cdef void on_cycles_elapsed(self, unsigned long n)
-    cdef list get_framebuffer(self)
+    cdef object get_framebuffer(self)
+    cdef void render_framebuffer(self)
     cdef bint send_input(self, unsigned char char_)
     cdef void clear_input(self)

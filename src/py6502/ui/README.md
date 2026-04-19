@@ -47,7 +47,6 @@ while dpg.is_dearpygui_running():
         if self._sim_running:
             self._drain_keys_into_system()
             self.system.run_for_microseconds(int(dt * 1_000_000))
-            self._video.update_framebuffer(self.system.get_framebuffer())
         self._debug.refresh(self.system)
     dpg.render_dearpygui_frame()
 ```
@@ -55,6 +54,12 @@ while dpg.is_dearpygui_running():
 This is the one invariant the frontend has to protect: **one coarse call
 to the sim per UI frame**. Anything that loops over CPU cycles from here
 is a bug, regardless of whether the tests pass.
+
+The video output doesn't need an explicit per-frame upload: the DearPyGui
+raw texture is bound directly to the sim's RGBA buffer by
+`VideoWindow.bind_system_framebuffer` at system-load time, so
+`render_dearpygui_frame()` re-reads the same memory every frame with no
+Python-level copy.
 
 The sim is paced by wall-clock `dt`, not a fixed per-frame constant, so
 its effective frequency stays locked to the configured `cpu_hz`

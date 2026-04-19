@@ -117,7 +117,8 @@ cdef class Component:
     cdef inline str get_name(self): ...
 
     # Optional overrides for display / input devices
-    cdef list get_framebuffer(self): ...    # default: None
+    cdef object get_framebuffer(self): ...  # default: None (pure getter)
+    cdef void render_framebuffer(self): ... # default: no-op (per-frame refresh)
     cdef bint send_input(self, unsigned char char_): ...  # default: False
     cdef void clear_input(self): ...        # default: no-op
 ```
@@ -247,9 +248,15 @@ This design has two upsides:
   `unsigned char[::1]` memoryview. `read_only` regions silently drop
   writes (matching real hardware ROM behavior).
 - **`TextDisplay`** owns a character-grid framebuffer and a `Font`. It
-  exposes `place_character(ch)`, `backspace()`, `clear_screen()`, and
-  returns an RGBA list from `get_screen_buffer()`. Peripherals that
-  drive a text display (e.g. Apple I) embed one of these.
+  exposes `place_character(ch)`, `backspace()`, `clear_screen()`,
+  `render_framebuffer()` (invoked once per UI frame by
+  `System.sync_display` — flattens the index buffer + stamps the
+  cursor), and `get_screen_buffer()` (a pure reference getter that
+  returns the preallocated RGBA `array.array('f')` the sim owns). The
+  frontend binds a DearPyGui raw texture to that buffer once at
+  system-load time; per-frame GPU uploads are automatic and cost no
+  Python-level copies. Peripherals that drive a text display (e.g.
+  Apple I) embed one of these.
 - **`Font`** loads a custom binary font format described in
   `graphics/textdisplay.pyx`. The format will be revisited alongside
   the font-maker tool in v0.3 (see [ROADMAP.md](ROADMAP.md)).
@@ -266,9 +273,17 @@ Peripherals follow a small contract:
 
 - **Must** override `cdef read(addr)` and `cdef write(addr, data)` for
   their register file.
-- **May** override `cdef list get_framebuffer(self)` (defined on
-  `Component`) returning an RGBA buffer if they are a display device.
-  `System.get_framebuffer()` calls through the base-class vtable.
+- **May** override `cdef object get_framebuffer(self)` (defined on
+  `Component`) returning a preallocated RGBA float buffer if they are
+  a display device. `System.get_framebuffer()` calls through the
+  base-class vtable. The returned buffer is owned by the peripheral
+  and reused every frame — never allocate a fresh one per call. The
+  per-frame refresh into that buffer happens in a sibling override,
+  `cdef void render_framebuffer(self)`, which `System.sync_display`
+  invokes at the end of every coarse frontend call. Splitting the two
+  keeps `get_framebuffer` cheap (a pointer return) so the frontend
+  can bind its DPG raw texture to the result once and forget about
+  it.
 - **May** override `cdef bint send_input(self, unsigned char)` and
   `cdef void clear_input(self)` for keyboard-like devices.
   `System.send_key()` / `System.clear_input_buffer()` call through the
@@ -313,6 +328,7 @@ cpdef void load_binary_at(self, unsigned int address, bytes data)
 cpdef Registers get_registers(self)
 cpdef void set_registers(self, Registers registers)
 cpdef object get_framebuffer(self)
+cpdef void sync_display(self)
 cpdef void register_tick_hook(self, object component)
 cpdef unsigned char peek(self, unsigned short address)
 cpdef unsigned char poke(self, unsigned short address, unsigned char data)
@@ -329,6 +345,14 @@ called on the continuous-run hot path. `step_cycle` delegates to
 checking `get_registers()` between calls until the CPU loads a new
 opcode (OPCODE_ADDR or OPCODE changes). Both return the number of
 cycles consumed.
+
+`sync_display` is the one-per-UI-frame chokepoint for the RGBA
+flatten. `run_for_microseconds` / `step_cycle` / `step_instruction`
+all call it on the way out so the frontend never has to; it's public
+only so tests (and the initial-paint on system load) can force a
+render without advancing cycles. The low-level `run_cycles` primitive
+skips the sync on purpose — it runs inside `step_instruction`'s inner
+loop and repeating the flatten there would be pure waste.
 
 `peek`/`poke` forward to the `main` bus and exist for tests + debug
 panels. The CPU hot path still calls the `cdef read`/`write` directly
@@ -446,21 +470,23 @@ Py6502App.run() — DearPyGui frame loop
        │
        ├── system.run_for_microseconds(16667)
        │       │
-       │       ▼
-       │   BusController.run_cycles(16667)
+       │       ├── BusController.run_cycles(16667)
+       │       │       │
+       │       │       ▼
+       │       │   for _ in 16667: MOS6502.clock()
+       │       │       │
+       │       │       ▼
+       │       │   each clock reads/writes bus → component.read/write (cdef)
        │       │
-       │       ▼
-       │   for _ in 16667: MOS6502.clock()
-       │       │
-       │       ▼
-       │   each clock reads/writes bus → component.read/write (cdef)
+       │       └── sync_display()  → display.render_framebuffer()
+       │               (cursor blink + index→RGBA flatten into the
+       │                raw-texture-bound buffer)
        │
-       ├── framebuffer = system.get_framebuffer()
-       │
-       └── dpg.set_value("output_texture", framebuffer)
+       └── (the framebuffer is already up to date; no Python-level
+            upload needed here — the DPG raw texture is bound to it)
        │
        ▼
-  dpg.render_dearpygui_frame()
+  dpg.render_dearpygui_frame()   # DPG re-uploads the bound buffer to the GPU
 ```
 
 ### 6.3 Read cycle inside the CPU

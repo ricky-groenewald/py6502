@@ -42,7 +42,6 @@ while dpg.is_dearpygui_running():
     if self.system is not None:
         self._drain_keys_into_system()
         self.system.run_for_microseconds(int(dt * 1_000_000))
-        self._video.update_framebuffer(self.system.get_framebuffer())
         self._debug.refresh(self.system)
     dpg.render_dearpygui_frame()
 ```
@@ -53,14 +52,20 @@ to `MAX_CATCH_UP_SECONDS` so a paused dialog or a stalled frame can't
 trigger a catch-up burst. The sim's effective frequency therefore stays
 locked to `cpu_hz` regardless of the host display's refresh rate.
 
+The video output isn't explicitly pushed per frame: at system-load time
+`VideoWindow.bind_system_framebuffer` points a DearPyGui raw texture at
+the sim's RGBA buffer. The sim mutates that buffer in place during
+`run_for_microseconds`; `render_dearpygui_frame()` re-uploads the same
+memory to the GPU with no Python-level copy.
+
 That frame body is allowed to call **exactly one** of:
 
 - `System.run_cycles(n)`
 - `System.run_for_microseconds(µs)` (µs derived from wall-clock dt)
 
-…followed by *reads* against `System.get_framebuffer()`,
-`System.get_registers()`, etc. Those reads are cheap: the framebuffer is a
-buffer the sim owns and mutates in place, not a per-frame allocation.
+…followed by *reads* against `System.get_registers()` and friends. Those
+reads are cheap: the framebuffer is owned by the sim and mutated in
+place, so the frontend never copies it on the hot path.
 
 Debug stepping (`System.step_cycle()`, `System.step_instruction()`) is
 the exception: these are called from button callbacks, not the continuous
