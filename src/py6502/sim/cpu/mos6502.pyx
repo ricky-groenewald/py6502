@@ -66,199 +66,9 @@ cdef class MOS6502:
             # Bit 7 - Negative (N)
 
         # Initialize instruction functions
-        memset(&self._instructions[0][0], 0, sizeof(instruction_func) * 256 * 2)
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
         self._next_instruction = NULL
-
-        # Define OPCODE instruction functions
-        # Format:
-        #   self._instructions[OPCODE] = [Addressing Mode Function, OPCODE Function]
-        #     or
-        #   self._instructions[OPCODE] = [Special OPCODE Function, NULL] (BRK and JSR)
-        # Invalid OPCODEs are set to [NULL, NULL]
-
-        # 0x00 - 0x0F
-        self._instructions[0x00][:] = [&MOS6502.BRK, NULL]
-        self._instructions[0x01][:] = [&MOS6502.indirect_x, &MOS6502.ORA]
-        self._instructions[0x05][:] = [&MOS6502.zero_page, &MOS6502.ORA]
-        self._instructions[0x06][:] = [&MOS6502.zero_page, &MOS6502.ASL]
-        self._instructions[0x08][:] = [&MOS6502.implied, &MOS6502.PHP]
-        self._instructions[0x09][:] = [&MOS6502.immediate, &MOS6502.ORA]
-        self._instructions[0x0A][:] = [&MOS6502.accumulator, &MOS6502.ASL]
-        self._instructions[0x0D][:] = [&MOS6502.absolute, &MOS6502.ORA]
-        self._instructions[0x0E][:] = [&MOS6502.absolute, &MOS6502.ASL]
-
-        # 0x10 - 0x1F
-        self._instructions[0x10][:] = [&MOS6502.immediate, &MOS6502.BPL]
-        self._instructions[0x11][:] = [&MOS6502.indirect_y, &MOS6502.ORA]
-        self._instructions[0x15][:] = [&MOS6502.zero_page_x, &MOS6502.ORA]
-        self._instructions[0x16][:] = [&MOS6502.zero_page_x, &MOS6502.ASL]
-        self._instructions[0x18][:] = [&MOS6502.implied, &MOS6502.CLC]
-        self._instructions[0x19][:] = [&MOS6502.absolute_y, &MOS6502.ORA]
-        self._instructions[0x1D][:] = [&MOS6502.absolute_x, &MOS6502.ORA]
-        self._instructions[0x1E][:] = [&MOS6502.absolute_x, &MOS6502.ASL]
-
-        # 0x20 - 0x2F
-        self._instructions[0x20][:] = [&MOS6502.JSR, NULL]
-        self._instructions[0x21][:] = [&MOS6502.indirect_x, &MOS6502.AND]
-        self._instructions[0x24][:] = [&MOS6502.zero_page, &MOS6502.BIT]
-        self._instructions[0x25][:] = [&MOS6502.zero_page, &MOS6502.AND]
-        self._instructions[0x26][:] = [&MOS6502.zero_page, &MOS6502.ROL]
-        self._instructions[0x28][:] = [&MOS6502.implied, &MOS6502.PLP]
-        self._instructions[0x29][:] = [&MOS6502.immediate, &MOS6502.AND]
-        self._instructions[0x2A][:] = [&MOS6502.accumulator, &MOS6502.ROL]
-        self._instructions[0x2C][:] = [&MOS6502.absolute, &MOS6502.BIT]
-        self._instructions[0x2D][:] = [&MOS6502.absolute, &MOS6502.AND]
-        self._instructions[0x2E][:] = [&MOS6502.absolute, &MOS6502.ROL]
-
-        # 0x30 - 0x3F
-        self._instructions[0x30][:] = [&MOS6502.immediate, &MOS6502.BMI]
-        self._instructions[0x31][:] = [&MOS6502.indirect_y, &MOS6502.AND]
-        self._instructions[0x35][:] = [&MOS6502.zero_page_x, &MOS6502.AND]
-        self._instructions[0x36][:] = [&MOS6502.zero_page_x, &MOS6502.ROL]
-        self._instructions[0x38][:] = [&MOS6502.implied, &MOS6502.SEC]
-        self._instructions[0x39][:] = [&MOS6502.absolute_y, &MOS6502.AND]
-        self._instructions[0x3D][:] = [&MOS6502.absolute_x, &MOS6502.AND]
-        self._instructions[0x3E][:] = [&MOS6502.absolute_x, &MOS6502.ROL]
-
-        # 0x40 - 0x4F
-        self._instructions[0x40][:] = [&MOS6502.implied, &MOS6502.RTI]
-        self._instructions[0x41][:] = [&MOS6502.indirect_x, &MOS6502.EOR]
-        self._instructions[0x45][:] = [&MOS6502.zero_page, &MOS6502.EOR]
-        self._instructions[0x46][:] = [&MOS6502.zero_page, &MOS6502.LSR]
-        self._instructions[0x48][:] = [&MOS6502.implied, &MOS6502.PHA]
-        self._instructions[0x49][:] = [&MOS6502.immediate, &MOS6502.EOR]
-        self._instructions[0x4A][:] = [&MOS6502.accumulator, &MOS6502.LSR]
-        self._instructions[0x4C][:] = [&MOS6502.absolute, &MOS6502.JMP]
-        self._instructions[0x4D][:] = [&MOS6502.absolute, &MOS6502.EOR]
-        self._instructions[0x4E][:] = [&MOS6502.absolute, &MOS6502.LSR]
-
-        # 0x50 - 0x5F
-        self._instructions[0x50][:] = [&MOS6502.immediate, &MOS6502.BVC]
-        self._instructions[0x51][:] = [&MOS6502.indirect_y, &MOS6502.EOR]
-        self._instructions[0x55][:] = [&MOS6502.zero_page_x, &MOS6502.EOR]
-        self._instructions[0x56][:] = [&MOS6502.zero_page_x, &MOS6502.LSR]
-        self._instructions[0x58][:] = [&MOS6502.implied, &MOS6502.CLI]
-        self._instructions[0x59][:] = [&MOS6502.absolute_y, &MOS6502.EOR]
-        self._instructions[0x5D][:] = [&MOS6502.absolute_x, &MOS6502.EOR]
-        self._instructions[0x5E][:] = [&MOS6502.absolute_x, &MOS6502.LSR]
-
-        # 0x60 - 0x6F
-        self._instructions[0x60][:] = [&MOS6502.implied, &MOS6502.RTS]
-        self._instructions[0x61][:] = [&MOS6502.indirect_x, &MOS6502.ADC_SBC]
-        self._instructions[0x65][:] = [&MOS6502.zero_page, &MOS6502.ADC_SBC]
-        self._instructions[0x66][:] = [&MOS6502.zero_page, &MOS6502.ROR]
-        self._instructions[0x68][:] = [&MOS6502.implied, &MOS6502.PLA]
-        self._instructions[0x69][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
-        self._instructions[0x6A][:] = [&MOS6502.accumulator, &MOS6502.ROR]
-        self._instructions[0x6C][:] = [&MOS6502.indirect, &MOS6502.JMP]
-        self._instructions[0x6D][:] = [&MOS6502.absolute, &MOS6502.ADC_SBC]
-        self._instructions[0x6E][:] = [&MOS6502.absolute, &MOS6502.ROR]
-
-        # 0x70 - 0x7F
-        self._instructions[0x70][:] = [&MOS6502.immediate, &MOS6502.BVS]
-        self._instructions[0x71][:] = [&MOS6502.indirect_y, &MOS6502.ADC_SBC]
-        self._instructions[0x75][:] = [&MOS6502.zero_page_x, &MOS6502.ADC_SBC]
-        self._instructions[0x76][:] = [&MOS6502.zero_page_x, &MOS6502.ROR]
-        self._instructions[0x78][:] = [&MOS6502.implied, &MOS6502.SEI]
-        self._instructions[0x79][:] = [&MOS6502.absolute_y, &MOS6502.ADC_SBC]
-        self._instructions[0x7D][:] = [&MOS6502.absolute_x, &MOS6502.ADC_SBC]
-        self._instructions[0x7E][:] = [&MOS6502.absolute_x, &MOS6502.ROR]
-
-        # 0x80 - 0x8F
-        self._instructions[0x81][:] = [&MOS6502.indirect_x, &MOS6502.STA]
-        self._instructions[0x84][:] = [&MOS6502.zero_page, &MOS6502.STY]
-        self._instructions[0x85][:] = [&MOS6502.zero_page, &MOS6502.STA]
-        self._instructions[0x86][:] = [&MOS6502.zero_page, &MOS6502.STX]
-        self._instructions[0x88][:] = [&MOS6502.implied, &MOS6502.DEY]
-        self._instructions[0x8A][:] = [&MOS6502.implied, &MOS6502.TXA]
-        self._instructions[0x8C][:] = [&MOS6502.absolute, &MOS6502.STY]
-        self._instructions[0x8D][:] = [&MOS6502.absolute, &MOS6502.STA]
-        self._instructions[0x8E][:] = [&MOS6502.absolute, &MOS6502.STX]
-
-        # 0x90 - 0x9F
-        self._instructions[0x90][:] = [&MOS6502.immediate, &MOS6502.BCC]
-        self._instructions[0x91][:] = [&MOS6502.indirect_y, &MOS6502.STA]
-        self._instructions[0x94][:] = [&MOS6502.zero_page_x, &MOS6502.STY]
-        self._instructions[0x95][:] = [&MOS6502.zero_page_x, &MOS6502.STA]
-        self._instructions[0x96][:] = [&MOS6502.zero_page_y, &MOS6502.STX]
-        self._instructions[0x98][:] = [&MOS6502.implied, &MOS6502.TYA]
-        self._instructions[0x99][:] = [&MOS6502.absolute_y, &MOS6502.STA]
-        self._instructions[0x9A][:] = [&MOS6502.implied, &MOS6502.TXS]
-        self._instructions[0x9D][:] = [&MOS6502.absolute_x, &MOS6502.STA]
-
-        # 0xA0 - 0xAF
-        self._instructions[0xA0][:] = [&MOS6502.immediate, &MOS6502.LDY]
-        self._instructions[0xA1][:] = [&MOS6502.indirect_x, &MOS6502.LDA]
-        self._instructions[0xA2][:] = [&MOS6502.immediate, &MOS6502.LDX]
-        self._instructions[0xA4][:] = [&MOS6502.zero_page, &MOS6502.LDY]
-        self._instructions[0xA5][:] = [&MOS6502.zero_page, &MOS6502.LDA]
-        self._instructions[0xA6][:] = [&MOS6502.zero_page, &MOS6502.LDX]
-        self._instructions[0xA8][:] = [&MOS6502.implied, &MOS6502.TAY]
-        self._instructions[0xA9][:] = [&MOS6502.immediate, &MOS6502.LDA]
-        self._instructions[0xAA][:] = [&MOS6502.implied, &MOS6502.TAX]
-        self._instructions[0xAC][:] = [&MOS6502.absolute, &MOS6502.LDY]
-        self._instructions[0xAD][:] = [&MOS6502.absolute, &MOS6502.LDA]
-        self._instructions[0xAE][:] = [&MOS6502.absolute, &MOS6502.LDX]
-
-        # 0xB0 - 0xBF
-        self._instructions[0xB0][:] = [&MOS6502.immediate, &MOS6502.BCS]
-        self._instructions[0xB1][:] = [&MOS6502.indirect_y, &MOS6502.LDA]
-        self._instructions[0xB4][:] = [&MOS6502.zero_page_x, &MOS6502.LDY]
-        self._instructions[0xB5][:] = [&MOS6502.zero_page_x, &MOS6502.LDA]
-        self._instructions[0xB6][:] = [&MOS6502.zero_page_y, &MOS6502.LDX]
-        self._instructions[0xB8][:] = [&MOS6502.implied, &MOS6502.CLV]
-        self._instructions[0xB9][:] = [&MOS6502.absolute_y, &MOS6502.LDA]
-        self._instructions[0xBA][:] = [&MOS6502.implied, &MOS6502.TSX]
-        self._instructions[0xBC][:] = [&MOS6502.absolute_x, &MOS6502.LDY]
-        self._instructions[0xBD][:] = [&MOS6502.absolute_x, &MOS6502.LDA]
-        self._instructions[0xBE][:] = [&MOS6502.absolute_y, &MOS6502.LDX]
-
-        # 0xC0 - 0xCF
-        self._instructions[0xC0][:] = [&MOS6502.immediate, &MOS6502.CPY]
-        self._instructions[0xC1][:] = [&MOS6502.indirect_x, &MOS6502.CMP]
-        self._instructions[0xC4][:] = [&MOS6502.zero_page, &MOS6502.CPY]
-        self._instructions[0xC5][:] = [&MOS6502.zero_page, &MOS6502.CMP]
-        self._instructions[0xC6][:] = [&MOS6502.zero_page, &MOS6502.DEC]
-        self._instructions[0xC8][:] = [&MOS6502.implied, &MOS6502.INY]
-        self._instructions[0xC9][:] = [&MOS6502.immediate, &MOS6502.CMP]
-        self._instructions[0xCA][:] = [&MOS6502.implied, &MOS6502.DEX]
-        self._instructions[0xCC][:] = [&MOS6502.absolute, &MOS6502.CPY]
-        self._instructions[0xCD][:] = [&MOS6502.absolute, &MOS6502.CMP]
-        self._instructions[0xCE][:] = [&MOS6502.absolute, &MOS6502.DEC]
-
-        # 0xD0 - 0xDF
-        self._instructions[0xD0][:] = [&MOS6502.immediate, &MOS6502.BNE]
-        self._instructions[0xD1][:] = [&MOS6502.indirect_y, &MOS6502.CMP]
-        self._instructions[0xD5][:] = [&MOS6502.zero_page_x, &MOS6502.CMP]
-        self._instructions[0xD6][:] = [&MOS6502.zero_page_x, &MOS6502.DEC]
-        self._instructions[0xD8][:] = [&MOS6502.implied, &MOS6502.CLD]
-        self._instructions[0xD9][:] = [&MOS6502.absolute_y, &MOS6502.CMP]
-        self._instructions[0xDD][:] = [&MOS6502.absolute_x, &MOS6502.CMP]
-        self._instructions[0xDE][:] = [&MOS6502.absolute_x, &MOS6502.DEC]
-
-        # 0xE0 - 0xEF
-        self._instructions[0xE0][:] = [&MOS6502.immediate, &MOS6502.CPX]
-        self._instructions[0xE1][:] = [&MOS6502.indirect_x, &MOS6502.ADC_SBC]
-        self._instructions[0xE4][:] = [&MOS6502.zero_page, &MOS6502.CPX]
-        self._instructions[0xE5][:] = [&MOS6502.zero_page, &MOS6502.ADC_SBC]
-        self._instructions[0xE6][:] = [&MOS6502.zero_page, &MOS6502.INC]
-        self._instructions[0xE8][:] = [&MOS6502.implied, &MOS6502.INX]
-        self._instructions[0xE9][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
-        self._instructions[0xEA][:] = [&MOS6502.implied, &MOS6502.NOP]
-        self._instructions[0xEC][:] = [&MOS6502.absolute, &MOS6502.CPX]
-        self._instructions[0xED][:] = [&MOS6502.absolute, &MOS6502.ADC_SBC]
-        self._instructions[0xEE][:] = [&MOS6502.absolute, &MOS6502.INC]
-
-        # 0xF0 - 0xFF
-        self._instructions[0xF0][:] = [&MOS6502.immediate, &MOS6502.BEQ]
-        self._instructions[0xF1][:] = [&MOS6502.indirect_y, &MOS6502.ADC_SBC]
-        self._instructions[0xF5][:] = [&MOS6502.zero_page_x, &MOS6502.ADC_SBC]
-        self._instructions[0xF6][:] = [&MOS6502.zero_page_x, &MOS6502.INC]
-        self._instructions[0xF8][:] = [&MOS6502.implied, &MOS6502.SED]
-        self._instructions[0xF9][:] = [&MOS6502.absolute_y, &MOS6502.ADC_SBC]
-        self._instructions[0xFD][:] = [&MOS6502.absolute_x, &MOS6502.ADC_SBC]
-        self._instructions[0xFE][:] = [&MOS6502.absolute_x, &MOS6502.INC]
+        self.set_opcodes()
 
     ###
     #   GETTERS AND SETTERS
@@ -274,6 +84,16 @@ cdef class MOS6502:
 
     cdef void set_invalid_opcode_mode(self, unsigned char mode):
         self._invalid_opcode_mode = mode
+        if mode == 2:
+            # If switching to illegal opcode mode, set all illegal opcodes to their functions
+            self.set_illegal_opcodes()
+        else:
+            # Reset all opcodes with standard opcodes
+            self.set_opcodes()
+
+        # Set BCD opcodes if decimal mode is currently set
+        if self._registers.P & DECIMAL_MODE_FLAG:
+            self.set_bcd_opcodes()
 
     ###
     #   CONTROL FUNCTIONS
@@ -349,6 +169,335 @@ cdef class MOS6502:
         # with its value during the entire cycle
         return 0
 
+    ###
+    #    OPCODE MODIFIER FUNCTIONS
+    ###
+    cdef void set_opcodes(self):
+        # Define OPCODE instruction functions
+        # Format:
+        #   self._instructions[OPCODE] = [Addressing Mode Function, OPCODE Function]
+        #     or
+        #   self._instructions[OPCODE] = [Special OPCODE Function, NULL] (BRK and JSR)
+        # Invalid OPCODEs are set to [NULL, NULL]
+        memset(&self._instructions[0][0], 0, sizeof(instruction_func) * 256 * 2)
+
+        # 0x00 ~ 0xF0
+        self._instructions[0x00][:] = [&MOS6502.BRK, NULL]
+        self._instructions[0x10][:] = [&MOS6502.immediate, &MOS6502.BPL]
+        self._instructions[0x20][:] = [&MOS6502.JSR, NULL]
+        self._instructions[0x30][:] = [&MOS6502.immediate, &MOS6502.BMI]
+        self._instructions[0x40][:] = [&MOS6502.implied, &MOS6502.RTI]
+        self._instructions[0x50][:] = [&MOS6502.immediate, &MOS6502.BVC]
+        self._instructions[0x60][:] = [&MOS6502.implied, &MOS6502.RTS]
+        self._instructions[0x70][:] = [&MOS6502.immediate, &MOS6502.BVS]
+        self._instructions[0x90][:] = [&MOS6502.immediate, &MOS6502.BCC]
+        self._instructions[0xA0][:] = [&MOS6502.immediate, &MOS6502.LDY]
+        self._instructions[0xB0][:] = [&MOS6502.immediate, &MOS6502.BCS]
+        self._instructions[0xC0][:] = [&MOS6502.immediate, &MOS6502.CPY]
+        self._instructions[0xD0][:] = [&MOS6502.immediate, &MOS6502.BNE]
+        self._instructions[0xE0][:] = [&MOS6502.immediate, &MOS6502.CPX]
+        self._instructions[0xF0][:] = [&MOS6502.immediate, &MOS6502.BEQ]
+
+        # 0x01 ~ 0xF1
+        self._instructions[0x01][:] = [&MOS6502.indirect_x, &MOS6502.ORA]
+        self._instructions[0x11][:] = [&MOS6502.indirect_y, &MOS6502.ORA]
+        self._instructions[0x21][:] = [&MOS6502.indirect_x, &MOS6502.AND]
+        self._instructions[0x31][:] = [&MOS6502.indirect_y, &MOS6502.AND]
+        self._instructions[0x41][:] = [&MOS6502.indirect_x, &MOS6502.EOR]
+        self._instructions[0x51][:] = [&MOS6502.indirect_y, &MOS6502.EOR]
+        self._instructions[0x61][:] = [&MOS6502.indirect_x, &MOS6502.ADC_SBC]
+        self._instructions[0x71][:] = [&MOS6502.indirect_y, &MOS6502.ADC_SBC]
+        self._instructions[0x81][:] = [&MOS6502.indirect_x, &MOS6502.STA]
+        self._instructions[0x91][:] = [&MOS6502.indirect_y, &MOS6502.STA]
+        self._instructions[0xA1][:] = [&MOS6502.indirect_x, &MOS6502.LDA]
+        self._instructions[0xB1][:] = [&MOS6502.indirect_y, &MOS6502.LDA]
+        self._instructions[0xC1][:] = [&MOS6502.indirect_x, &MOS6502.CMP]
+        self._instructions[0xD1][:] = [&MOS6502.indirect_y, &MOS6502.CMP]
+        self._instructions[0xE1][:] = [&MOS6502.indirect_x, &MOS6502.ADC_SBC]
+        self._instructions[0xF1][:] = [&MOS6502.indirect_y, &MOS6502.ADC_SBC]
+
+        # 0x02 ~ 0xF2
+        self._instructions[0xA2][:] = [&MOS6502.immediate, &MOS6502.LDX]
+
+        # 0x03 ~ 0xF3
+        ## Only illegal opcodes, set in set_illegal_opcodes()
+
+        # 0x04 ~ 0xF4
+        self._instructions[0x24][:] = [&MOS6502.zero_page, &MOS6502.BIT]
+        self._instructions[0x84][:] = [&MOS6502.zero_page, &MOS6502.STY]
+        self._instructions[0x94][:] = [&MOS6502.zero_page_x, &MOS6502.STY]
+        self._instructions[0xA4][:] = [&MOS6502.zero_page, &MOS6502.LDY]
+        self._instructions[0xB4][:] = [&MOS6502.zero_page_x, &MOS6502.LDY]
+        self._instructions[0xC4][:] = [&MOS6502.zero_page, &MOS6502.CPY]
+        self._instructions[0xE4][:] = [&MOS6502.zero_page, &MOS6502.CPX]
+
+        # 0x05 ~ 0xF5
+        self._instructions[0x05][:] = [&MOS6502.zero_page, &MOS6502.ORA]
+        self._instructions[0x15][:] = [&MOS6502.zero_page_x, &MOS6502.ORA]
+        self._instructions[0x25][:] = [&MOS6502.zero_page, &MOS6502.AND]
+        self._instructions[0x35][:] = [&MOS6502.zero_page_x, &MOS6502.AND]
+        self._instructions[0x45][:] = [&MOS6502.zero_page, &MOS6502.EOR]
+        self._instructions[0x55][:] = [&MOS6502.zero_page_x, &MOS6502.EOR]
+        self._instructions[0x65][:] = [&MOS6502.zero_page, &MOS6502.ADC_SBC]
+        self._instructions[0x75][:] = [&MOS6502.zero_page_x, &MOS6502.ADC_SBC]
+        self._instructions[0x85][:] = [&MOS6502.zero_page, &MOS6502.STA]
+        self._instructions[0x95][:] = [&MOS6502.zero_page_x, &MOS6502.STA]
+        self._instructions[0xA5][:] = [&MOS6502.zero_page, &MOS6502.LDA]
+        self._instructions[0xB5][:] = [&MOS6502.zero_page_x, &MOS6502.LDA]
+        self._instructions[0xC5][:] = [&MOS6502.zero_page, &MOS6502.CMP]
+        self._instructions[0xD5][:] = [&MOS6502.zero_page_x, &MOS6502.CMP]
+        self._instructions[0xE5][:] = [&MOS6502.zero_page, &MOS6502.ADC_SBC]
+        self._instructions[0xF5][:] = [&MOS6502.zero_page_x, &MOS6502.ADC_SBC]
+
+        # 0x06 ~ 0xF6
+        self._instructions[0x06][:] = [&MOS6502.zero_page, &MOS6502.ASL]
+        self._instructions[0x16][:] = [&MOS6502.zero_page_x, &MOS6502.ASL]
+        self._instructions[0x26][:] = [&MOS6502.zero_page, &MOS6502.ROL]
+        self._instructions[0x36][:] = [&MOS6502.zero_page_x, &MOS6502.ROL]
+        self._instructions[0x46][:] = [&MOS6502.zero_page, &MOS6502.LSR]
+        self._instructions[0x56][:] = [&MOS6502.zero_page_x, &MOS6502.LSR]
+        self._instructions[0x66][:] = [&MOS6502.zero_page, &MOS6502.ROR]
+        self._instructions[0x76][:] = [&MOS6502.zero_page_x, &MOS6502.ROR]
+        self._instructions[0x86][:] = [&MOS6502.zero_page, &MOS6502.STX]
+        self._instructions[0x96][:] = [&MOS6502.zero_page_y, &MOS6502.STX]
+        self._instructions[0xA6][:] = [&MOS6502.zero_page, &MOS6502.LDX]
+        self._instructions[0xB6][:] = [&MOS6502.zero_page_y, &MOS6502.LDX]
+        self._instructions[0xC6][:] = [&MOS6502.zero_page, &MOS6502.DEC]
+        self._instructions[0xD6][:] = [&MOS6502.zero_page_x, &MOS6502.DEC]
+        self._instructions[0xE6][:] = [&MOS6502.zero_page, &MOS6502.INC]
+        self._instructions[0xF6][:] = [&MOS6502.zero_page_x, &MOS6502.INC]
+
+        # 0x07 ~ 0xF7
+        ## Only illegal opcodes, set in set_illegal_opcodes()
+
+        # 0x08 ~ 0xF8
+        self._instructions[0x08][:] = [&MOS6502.implied, &MOS6502.PHP]
+        self._instructions[0x18][:] = [&MOS6502.implied, &MOS6502.CLC]
+        self._instructions[0x28][:] = [&MOS6502.implied, &MOS6502.PLP]
+        self._instructions[0x38][:] = [&MOS6502.implied, &MOS6502.SEC]
+        self._instructions[0x48][:] = [&MOS6502.implied, &MOS6502.PHA]
+        self._instructions[0x58][:] = [&MOS6502.implied, &MOS6502.CLI]
+        self._instructions[0x68][:] = [&MOS6502.implied, &MOS6502.PLA]
+        self._instructions[0x78][:] = [&MOS6502.implied, &MOS6502.SEI]
+        self._instructions[0x88][:] = [&MOS6502.implied, &MOS6502.DEY]
+        self._instructions[0x98][:] = [&MOS6502.implied, &MOS6502.TYA]
+        self._instructions[0xA8][:] = [&MOS6502.implied, &MOS6502.TAY]
+        self._instructions[0xB8][:] = [&MOS6502.implied, &MOS6502.CLV]
+        self._instructions[0xC8][:] = [&MOS6502.implied, &MOS6502.INY]
+        self._instructions[0xD8][:] = [&MOS6502.implied, &MOS6502.CLD]
+        self._instructions[0xE8][:] = [&MOS6502.implied, &MOS6502.INX]
+        self._instructions[0xF8][:] = [&MOS6502.implied, &MOS6502.SED]
+
+        # 0x09 ~ 0xF9
+        self._instructions[0x09][:] = [&MOS6502.immediate, &MOS6502.ORA]
+        self._instructions[0x19][:] = [&MOS6502.absolute_y, &MOS6502.ORA]
+        self._instructions[0x29][:] = [&MOS6502.immediate, &MOS6502.AND]
+        self._instructions[0x39][:] = [&MOS6502.absolute_y, &MOS6502.AND]
+        self._instructions[0x49][:] = [&MOS6502.immediate, &MOS6502.EOR]
+        self._instructions[0x59][:] = [&MOS6502.absolute_y, &MOS6502.EOR]
+        self._instructions[0x69][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
+        self._instructions[0x79][:] = [&MOS6502.absolute_y, &MOS6502.ADC_SBC]
+        self._instructions[0x99][:] = [&MOS6502.absolute_y, &MOS6502.STA]
+        self._instructions[0xA9][:] = [&MOS6502.immediate, &MOS6502.LDA]
+        self._instructions[0xB9][:] = [&MOS6502.absolute_y, &MOS6502.LDA]
+        self._instructions[0xC9][:] = [&MOS6502.immediate, &MOS6502.CMP]
+        self._instructions[0xD9][:] = [&MOS6502.absolute_y, &MOS6502.CMP]
+        self._instructions[0xE9][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
+        self._instructions[0xF9][:] = [&MOS6502.absolute_y, &MOS6502.ADC_SBC]
+
+        # 0x0A ~ 0xFA
+        self._instructions[0x0A][:] = [&MOS6502.accumulator, &MOS6502.ASL]
+        self._instructions[0x2A][:] = [&MOS6502.accumulator, &MOS6502.ROL]
+        self._instructions[0x4A][:] = [&MOS6502.accumulator, &MOS6502.LSR]
+        self._instructions[0x6A][:] = [&MOS6502.accumulator, &MOS6502.ROR]
+        self._instructions[0x8A][:] = [&MOS6502.implied, &MOS6502.TXA]
+        self._instructions[0x9A][:] = [&MOS6502.implied, &MOS6502.TXS]
+        self._instructions[0xAA][:] = [&MOS6502.implied, &MOS6502.TAX]
+        self._instructions[0xBA][:] = [&MOS6502.implied, &MOS6502.TSX]
+        self._instructions[0xCA][:] = [&MOS6502.implied, &MOS6502.DEX]
+        self._instructions[0xEA][:] = [&MOS6502.implied, &MOS6502.NOP]
+
+        # 0x0B ~ 0xFB
+        ## Only illegal opcodes, set in set_illegal_opcodes()
+
+        # 0x0C ~ 0xFC
+        self._instructions[0x2C][:] = [&MOS6502.absolute, &MOS6502.BIT]
+        self._instructions[0x4C][:] = [&MOS6502.absolute, &MOS6502.JMP]
+        self._instructions[0x6C][:] = [&MOS6502.indirect, &MOS6502.JMP]
+        self._instructions[0x8C][:] = [&MOS6502.absolute, &MOS6502.STY]
+        self._instructions[0xAC][:] = [&MOS6502.absolute, &MOS6502.LDY]
+        self._instructions[0xBC][:] = [&MOS6502.absolute_x, &MOS6502.LDY]
+        self._instructions[0xCC][:] = [&MOS6502.absolute, &MOS6502.CPY]
+        self._instructions[0xEC][:] = [&MOS6502.absolute, &MOS6502.CPX]
+
+        # 0x0D ~ 0xFD
+        self._instructions[0x0D][:] = [&MOS6502.absolute, &MOS6502.ORA]
+        self._instructions[0x1D][:] = [&MOS6502.absolute_x, &MOS6502.ORA]
+        self._instructions[0x2D][:] = [&MOS6502.absolute, &MOS6502.AND]
+        self._instructions[0x3D][:] = [&MOS6502.absolute_x, &MOS6502.AND]
+        self._instructions[0x4D][:] = [&MOS6502.absolute, &MOS6502.EOR]
+        self._instructions[0x5D][:] = [&MOS6502.absolute_x, &MOS6502.EOR]
+        self._instructions[0x6D][:] = [&MOS6502.absolute, &MOS6502.ADC_SBC]
+        self._instructions[0x7D][:] = [&MOS6502.absolute_x, &MOS6502.ADC_SBC]
+        self._instructions[0x8D][:] = [&MOS6502.absolute, &MOS6502.STA]
+        self._instructions[0x9D][:] = [&MOS6502.absolute_x, &MOS6502.STA]
+        self._instructions[0xAD][:] = [&MOS6502.absolute, &MOS6502.LDA]
+        self._instructions[0xBD][:] = [&MOS6502.absolute_x, &MOS6502.LDA]
+        self._instructions[0xCD][:] = [&MOS6502.absolute, &MOS6502.CMP]
+        self._instructions[0xDD][:] = [&MOS6502.absolute_x, &MOS6502.CMP]
+        self._instructions[0xED][:] = [&MOS6502.absolute, &MOS6502.ADC_SBC]
+        self._instructions[0xFD][:] = [&MOS6502.absolute_x, &MOS6502.ADC_SBC]
+
+        # 0x0E ~ 0xFE
+        self._instructions[0x0E][:] = [&MOS6502.absolute, &MOS6502.ASL]
+        self._instructions[0x1E][:] = [&MOS6502.absolute_x, &MOS6502.ASL]
+        self._instructions[0x2E][:] = [&MOS6502.absolute, &MOS6502.ROL]
+        self._instructions[0x3E][:] = [&MOS6502.absolute_x, &MOS6502.ROL]
+        self._instructions[0x4E][:] = [&MOS6502.absolute, &MOS6502.LSR]
+        self._instructions[0x5E][:] = [&MOS6502.absolute_x, &MOS6502.LSR]
+        self._instructions[0x6E][:] = [&MOS6502.absolute, &MOS6502.ROR]
+        self._instructions[0x7E][:] = [&MOS6502.absolute_x, &MOS6502.ROR]
+        self._instructions[0x8E][:] = [&MOS6502.absolute, &MOS6502.STX]
+        self._instructions[0xAE][:] = [&MOS6502.absolute, &MOS6502.LDX]
+        self._instructions[0xBE][:] = [&MOS6502.absolute_y, &MOS6502.LDX]
+        self._instructions[0xCE][:] = [&MOS6502.absolute, &MOS6502.DEC]
+        self._instructions[0xDE][:] = [&MOS6502.absolute_x, &MOS6502.DEC]
+        self._instructions[0xEE][:] = [&MOS6502.absolute, &MOS6502.INC]
+        self._instructions[0xFE][:] = [&MOS6502.absolute_x, &MOS6502.INC]
+
+        # 0x0F ~ 0xFF
+        ## Only illegal opcodes, set in set_illegal_opcodes()
+
+    cdef void set_illegal_opcodes(self):
+        # 0x00 ~ 0xF0
+        self._instructions[0x80][:] = [&MOS6502.immediate, &MOS6502.NOP_ILLEGAL]
+
+        # 0x02 ~ 0xF2
+        self._instructions[0x02][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x12][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x22][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x32][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x42][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x52][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x62][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x72][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0x82][:] = [&MOS6502.immediate, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x92][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0xB2][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0xC2][:] = [&MOS6502.immediate, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0xD2][:] = [&MOS6502.JAM, NULL]
+        self._instructions[0xE2][:] = [&MOS6502.immediate, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0xF2][:] = [&MOS6502.JAM, NULL]
+
+        # 0x03 ~ 0xF3
+        self._instructions[0x03][:] = [&MOS6502.indirect_x, &MOS6502.SLO]
+        self._instructions[0x13][:] = [&MOS6502.indirect_y, &MOS6502.SLO]
+        self._instructions[0x23][:] = [&MOS6502.indirect_x, &MOS6502.RLA]
+        self._instructions[0x33][:] = [&MOS6502.indirect_y, &MOS6502.RLA]
+        self._instructions[0x43][:] = [&MOS6502.indirect_x, &MOS6502.SRE]
+        self._instructions[0x53][:] = [&MOS6502.indirect_y, &MOS6502.SRE]
+        self._instructions[0x63][:] = [&MOS6502.indirect_x, &MOS6502.RRA]
+        self._instructions[0x73][:] = [&MOS6502.indirect_y, &MOS6502.RRA]
+        self._instructions[0x83][:] = [&MOS6502.indirect_x, &MOS6502.SAX]
+        self._instructions[0x93][:] = [&MOS6502.indirect_y, &MOS6502.SHA]
+        self._instructions[0xA3][:] = [&MOS6502.indirect_x, &MOS6502.LAX]
+        self._instructions[0xB3][:] = [&MOS6502.indirect_y, &MOS6502.LAX]
+        self._instructions[0xC3][:] = [&MOS6502.indirect_x, &MOS6502.DCP]
+        self._instructions[0xD3][:] = [&MOS6502.indirect_y, &MOS6502.DCP]
+        self._instructions[0xE3][:] = [&MOS6502.indirect_x, &MOS6502.ISC]
+        self._instructions[0xF3][:] = [&MOS6502.indirect_y, &MOS6502.ISC]
+
+        # 0x04 ~ 0xF4
+        self._instructions[0x04][:] = [&MOS6502.zero_page, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x14][:] = [&MOS6502.zero_page_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x34][:] = [&MOS6502.zero_page_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x44][:] = [&MOS6502.zero_page, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x54][:] = [&MOS6502.zero_page_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x64][:] = [&MOS6502.zero_page, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x74][:] = [&MOS6502.zero_page_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0xD4][:] = [&MOS6502.zero_page_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0xF4][:] = [&MOS6502.zero_page_x, &MOS6502.NOP_ILLEGAL]
+
+        # 0x07 ~ 0xF7
+        self._instructions[0x07][:] = [&MOS6502.zero_page, &MOS6502.SLO]
+        self._instructions[0x17][:] = [&MOS6502.zero_page_x, &MOS6502.SLO]
+        self._instructions[0x27][:] = [&MOS6502.zero_page, &MOS6502.RLA]
+        self._instructions[0x37][:] = [&MOS6502.zero_page_x, &MOS6502.RLA]
+        self._instructions[0x47][:] = [&MOS6502.zero_page, &MOS6502.SRE]
+        self._instructions[0x57][:] = [&MOS6502.zero_page_x, &MOS6502.SRE]
+        self._instructions[0x67][:] = [&MOS6502.zero_page, &MOS6502.RRA]
+        self._instructions[0x77][:] = [&MOS6502.zero_page_x, &MOS6502.RRA]
+        self._instructions[0x87][:] = [&MOS6502.zero_page, &MOS6502.SAX]
+        self._instructions[0x97][:] = [&MOS6502.zero_page_y, &MOS6502.SAX]
+        self._instructions[0xA7][:] = [&MOS6502.zero_page, &MOS6502.LAX]
+        self._instructions[0xB7][:] = [&MOS6502.zero_page_y, &MOS6502.LAX]
+        self._instructions[0xC7][:] = [&MOS6502.zero_page, &MOS6502.DCP]
+        self._instructions[0xD7][:] = [&MOS6502.zero_page_x, &MOS6502.DCP]
+        self._instructions[0xE7][:] = [&MOS6502.zero_page, &MOS6502.ISC]
+        self._instructions[0xF7][:] = [&MOS6502.zero_page_x, &MOS6502.ISC]
+
+        # 0x09 ~ 0xF9
+        self._instructions[0x89][:] = [&MOS6502.immediate, &MOS6502.NOP_ILLEGAL]
+
+        # 0x0A ~ 0xFA
+        self._instructions[0x1A][:] = [&MOS6502.implied, &MOS6502.NOP] # These are exactly the same as regular NOPs
+        self._instructions[0x3A][:] = [&MOS6502.implied, &MOS6502.NOP]
+        self._instructions[0x5A][:] = [&MOS6502.implied, &MOS6502.NOP]
+        self._instructions[0x7A][:] = [&MOS6502.implied, &MOS6502.NOP]
+        self._instructions[0xDA][:] = [&MOS6502.implied, &MOS6502.NOP]
+        self._instructions[0xFA][:] = [&MOS6502.implied, &MOS6502.NOP]
+
+        # 0x0B ~ 0xFB
+        self._instructions[0x0B][:] = [&MOS6502.immediate, &MOS6502.ANC]
+        self._instructions[0x1B][:] = [&MOS6502.absolute_y, &MOS6502.SLO]
+        self._instructions[0x2B][:] = [&MOS6502.immediate, &MOS6502.ANC]
+        self._instructions[0x3B][:] = [&MOS6502.absolute_y, &MOS6502.RLA]
+        self._instructions[0x4B][:] = [&MOS6502.immediate, &MOS6502.ALR]
+        self._instructions[0x5B][:] = [&MOS6502.absolute_y, &MOS6502.SRE]
+        self._instructions[0x6B][:] = [&MOS6502.immediate, &MOS6502.ARR]
+        self._instructions[0x7B][:] = [&MOS6502.absolute_y, &MOS6502.RRA]
+        self._instructions[0x8B][:] = [&MOS6502.immediate, &MOS6502.ANE]
+        self._instructions[0x9B][:] = [&MOS6502.absolute_y, &MOS6502.TAS]
+        self._instructions[0xAB][:] = [&MOS6502.immediate, &MOS6502.LXA]
+        self._instructions[0xBB][:] = [&MOS6502.absolute_y, &MOS6502.LAS]
+        self._instructions[0xCB][:] = [&MOS6502.immediate, &MOS6502.SBX]
+        self._instructions[0xDB][:] = [&MOS6502.absolute_y, &MOS6502.DCP]
+        self._instructions[0xEB][:] = [&MOS6502.immediate, &MOS6502.ADC_SBC]
+        self._instructions[0xFB][:] = [&MOS6502.absolute_y, &MOS6502.ISC]
+
+        # 0x0C ~ 0xFC
+        self._instructions[0x0C][:] = [&MOS6502.absolute, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x1C][:] = [&MOS6502.absolute_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x3C][:] = [&MOS6502.absolute_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x5C][:] = [&MOS6502.absolute_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x7C][:] = [&MOS6502.absolute_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0x9C][:] = [&MOS6502.absolute_x, &MOS6502.SHY]
+        self._instructions[0xDC][:] = [&MOS6502.absolute_x, &MOS6502.NOP_ILLEGAL]
+        self._instructions[0xFC][:] = [&MOS6502.absolute_x, &MOS6502.NOP_ILLEGAL]
+
+        # 0x0E ~ 0xFE
+        self._instructions[0x9E][:] = [&MOS6502.absolute_y, &MOS6502.SHX]
+
+
+        # 0x0F ~ 0xFF
+        self._instructions[0x0F][:] = [&MOS6502.absolute, &MOS6502.SLO]
+        self._instructions[0x1F][:] = [&MOS6502.absolute_x, &MOS6502.SLO]
+        self._instructions[0x2F][:] = [&MOS6502.absolute, &MOS6502.RLA]
+        self._instructions[0x3F][:] = [&MOS6502.absolute_x, &MOS6502.RLA]
+        self._instructions[0x4F][:] = [&MOS6502.absolute, &MOS6502.SRE]
+        self._instructions[0x5F][:] = [&MOS6502.absolute_x, &MOS6502.SRE]
+        self._instructions[0x6F][:] = [&MOS6502.absolute, &MOS6502.RRA]
+        self._instructions[0x7F][:] = [&MOS6502.absolute_x, &MOS6502.RRA]
+        self._instructions[0x8F][:] = [&MOS6502.absolute, &MOS6502.SAX]
+        self._instructions[0x9F][:] = [&MOS6502.absolute_y, &MOS6502.SHA]
+        self._instructions[0xAF][:] = [&MOS6502.absolute, &MOS6502.LAX]
+        self._instructions[0xBF][:] = [&MOS6502.absolute_y, &MOS6502.LAX]
+        self._instructions[0xCF][:] = [&MOS6502.absolute, &MOS6502.DCP]
+        self._instructions[0xDF][:] = [&MOS6502.absolute_x, &MOS6502.DCP]
+        self._instructions[0xEF][:] = [&MOS6502.absolute, &MOS6502.ISC]
+        self._instructions[0xFF][:] = [&MOS6502.absolute_x, &MOS6502.ISC]
+        
+
     cdef void clear_bcd_opcodes(self):
         # Change all ADC and SBC opcodes back to normal
         # For NES implementations, remove this FOR loop
@@ -357,7 +506,10 @@ cdef class MOS6502:
                 0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
             ]:
             self._instructions[opcode][1] = &MOS6502.ADC_SBC
-        # pass
+
+        # In case illegal opcode was set
+        if self._instructions[0xEB][1] == &MOS6502.ADC_SBC_BCD:
+            self._instructions[0xEB][1] = &MOS6502.ADC_SBC
 
     cdef void set_bcd_opcodes(self):
         # Change all ADC and SBC opcodes to use BCD version
@@ -367,7 +519,10 @@ cdef class MOS6502:
                 0xE9, 0xED, 0xE5, 0xE1, 0xF1, 0xF5, 0xFD, 0xF9
             ]:
             self._instructions[opcode][1] = &MOS6502.ADC_SBC_BCD
-        # pass
+
+        # In case illegal opcode was set
+        if self._instructions[0xEB][1] == &MOS6502.ADC_SBC:
+            self._instructions[0xEB][1] = &MOS6502.ADC_SBC_BCD
 
     ###
     #   ADDRESSING MODES
@@ -546,7 +701,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -586,7 +741,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -676,7 +831,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1069,7 +1224,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1223,7 +1378,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1345,7 +1500,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1371,7 +1526,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1397,7 +1552,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1481,7 +1636,7 @@ cdef class MOS6502:
             # Run a discarding cycle if a page cross occured
             self._page_cross_possible = False
             if self._page_cross_occurred:
-                self._memory_bus.read(self._temp_address)
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
                 self._page_cross_occurred = False
                 return 0
 
@@ -1862,4 +2017,738 @@ cdef class MOS6502:
             else self._registers.P & ~NEGATIVE_FLAG
         )
         self._current_instruction = &MOS6502.load_op_code # prevent PC increment
+        return 0
+
+    ###
+    #   ILLEGAL OPCODE FUNCTIONS - ref https://www.masswerk.at/6502/6502_instruction_set.html
+    ###
+
+    # ALR (ASR): A AND oper, 0 -> [76543210] -> C
+    cdef int ALR(self) except -1:
+        # Execute AND first between ACC and Immediate value
+        self._registers.ACC &= self._memory_bus.read(self._temp_address)
+
+        # Then execute LSR on the accumulator and set flags accordingly
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if self._registers.ACC & 0x01
+            else self._registers.P & ~CARRY_FLAG
+        )
+
+        self._registers.ACC >>= 1
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # ANC and ANC2: A AND oper, bit(7) -> C
+    cdef int ANC(self) except -1:
+        # Execute AND first between ACC and Immediate value
+        self._registers.ACC &= self._memory_bus.read(self._temp_address)
+
+        # Then load Bit 7 -> Carry flag and set flags accordingly
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if self._registers.ACC & 0x80
+            else self._registers.P & ~CARRY_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # ANE (XAA): (A OR CONST) AND X AND oper -> A    [We assume CONST is always 0xFF]
+    cdef int ANE(self) except -1:
+        self._registers.ACC = self._registers.X & self._memory_bus.read(self._temp_address)
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # ARR: A AND oper, C -> [76543210] -> C
+    cdef int ARR(self) except -1:
+        # Execute AND first between ACC and Immediate value, then execute ROR
+        self._registers.ACC = (
+            (self._registers.ACC & self._memory_bus.read(self._temp_address)) >> 1
+            ) | ((self._registers.P & CARRY_FLAG) << 7)
+
+        # Set flags in a weird way: Bit 6 -> Carry flag, (Bit 6 ^ Bit 5) -> Overflow flag,
+        # Normal Zero and Negative flags
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if self._registers.ACC & (0x01 << 6)
+            else self._registers.P & ~CARRY_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | OVERFLOW_FLAG
+            if ((self._registers.ACC >> 6) ^ (self._registers.ACC >> 5)) & 0x01
+            else self._registers.P & ~OVERFLOW_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # DCP (DCM): M - 1 -> M, A - M
+    cdef int DCP(self) except -1:
+        # Execute DEC first, then CMP the result with ACC
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.read(self._temp_address)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._cycle_number = 2
+        else:
+            # First perform DEC on the value at the address, writing the result back to memory
+            self._temp_data -= 1
+            self._memory_bus.write(self._temp_address, self._temp_data)
+
+            # Then we'll perform a CMP between the result and the value in the accumulator
+            # Convert to 2's complement to subtract
+            self._temp_data = (self._temp_data ^ 0xFF)
+            self._arithmetic_result = self._registers.ACC + self._temp_data + 1
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if (self._arithmetic_result & 0xFF)
+                else self._registers.P | ZERO_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._arithmetic_result & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if (self._arithmetic_result >> 8)
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._current_instruction = NULL
+
+        return 0
+
+    # ISC (ISB, INS): M + 1 -> M, A - M - C̅ -> A (i.e. INC followed by SBC)
+    cdef int ISC(self) except -1:
+        # Execute INC first, then SBC the result with ACC
+        #
+        # You know...
+        #
+        # Fuck this function too!
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        cdef signed short result, bin_result
+
+        ### INC
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.read(self._temp_address)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._cycle_number = 2
+        else:
+            self._temp_data += 1
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            ### INC
+
+            ### SBC
+            if not (self._registers.P & DECIMAL_MODE_FLAG): # Not in decimal mode, perform normal binary subtraction
+                # SBC opcodes have bit 7 set
+                self._temp_data ^= 0xFF # Invert for subtraction
+
+                self._arithmetic_result = (
+                    self._registers.ACC + self._temp_data + (self._registers.P & CARRY_FLAG)
+                )
+
+                # Clear N, O, Z, and C flags and set carry flag
+                self._registers.P = (self._registers.P & ~NOZC_FLAGS) | (self._arithmetic_result >> 8)
+
+                self._arithmetic_result &= 0xFF
+
+                # Set negative, overflow, zero flags
+                self._registers.P |= (
+                    (self._arithmetic_result & NEGATIVE_FLAG)
+                    | (((self._registers.ACC ^ self._arithmetic_result) & (self._temp_data ^ self._arithmetic_result) & 0x80) >> 1)
+                    | ((not self._arithmetic_result) << 1)
+                )
+
+                self._registers.ACC = self._arithmetic_result
+            ### SBC
+
+            ### SBC_BCD
+            else: # Decimal mode, perform BCD subtraction
+                # If bit 7 of the OPCODE is set, we are subtracting
+                result = (
+                        (self._registers.ACC & 0x0F) +
+                        (1 - 2 * (self._registers.OPCODE >> 7)) * (self._temp_data & 0x0F) +
+                        (self._registers.P & CARRY_FLAG) - (self._registers.OPCODE >> 7)
+                    )
+
+                bin_result = self._registers.ACC + (self._temp_data^0xff) + (self._registers.P & CARRY_FLAG)
+
+                self._registers.P = (
+                    self._registers.P & ~ZERO_FLAG
+                    if bin_result & 0xFF
+                    else self._registers.P | ZERO_FLAG
+                )
+                self._registers.P = (
+                    self._registers.P | NEGATIVE_FLAG
+                    if bin_result & NEGATIVE_FLAG
+                    else self._registers.P & ~NEGATIVE_FLAG
+                )
+
+                if result < 0:
+                    result = ((result - 0x06) & 0x0f) - 0x10
+                result = (self._registers.ACC & 0xf0) - (self._temp_data & 0xf0) + result
+                if result < 0:
+                    result -= 0x60
+                self._registers.P = (
+                    self._registers.P | CARRY_FLAG
+                    if result >= 0
+                    else self._registers.P & ~CARRY_FLAG
+                )
+                self._temp_data ^= 0xff
+                self._registers.P = (
+                    self._registers.P | OVERFLOW_FLAG
+                    if ((self._registers.ACC^(bin_result & 0xff)) & (self._temp_data^(bin_result & 0xff)) & 0x80)
+                    else self._registers.P & ~OVERFLOW_FLAG
+                )
+                self._registers.ACC = result & 0xff
+            ### SBC_BCD
+
+            self._current_instruction = NULL
+
+        return 0
+
+    # LAS (LAR): Memory AND Stack Pointer -> A, X, S
+    cdef int LAS(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            self._page_cross_possible = False
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+                self._page_cross_occurred = False
+                return 0
+
+        self._registers.ACC = self._registers.X = self._registers.S = self._memory_bus.read(self._temp_address) & self._registers.S
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # LAX: Memory -> A, X
+    cdef int LAX(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle if a page cross occured
+            self._page_cross_possible = False
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+                self._page_cross_occurred = False
+                return 0
+
+        self._registers.ACC = self._registers.X = self._memory_bus.read(self._temp_address)
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # LXA (ATX, OAL): (A OR CONST) AND oper -> A -> X   [We assume CONST is always 0xFF]
+    cdef int LXA(self) except -1:
+        self._registers.ACC = self._registers.X = self._memory_bus.read(self._temp_address)
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if self._registers.ACC
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._registers.ACC & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._current_instruction = NULL
+        return 0
+
+    # RLA: M = C <- [76543210] <- C, A AND M -> A
+    cdef int RLA(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.read(self._temp_address)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._cycle_number = 2
+        else:
+            ### ROL
+            self._arithmetic_result = self._registers.P & CARRY_FLAG # Used to store original carry bit
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x80
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data = (self._temp_data << 1) | self._arithmetic_result
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            ### ROL
+
+            ### M AND A -> A
+            self._registers.ACC &= self._temp_data
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+            ### M AND A -> A
+
+            self._current_instruction = NULL
+
+        return 0
+
+    # RRA: C -> [76543210] -> C, A + M + C -> A, C (i.e. ROR followed by ADC)
+    cdef int RRA(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        cdef signed short result, bin_result
+
+        ### ROR
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.read(self._temp_address)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._cycle_number = 2
+        else:
+            self._arithmetic_result = (self._registers.P & CARRY_FLAG) << 7 # Used to store original carry bit
+
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x01
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data = (self._temp_data >> 1) | self._arithmetic_result
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            ### ROR
+
+            ### ADC
+            if not (self._registers.P & DECIMAL_MODE_FLAG): # Not in decimal mode, perform normal binary addition
+                self._arithmetic_result = (
+                    self._registers.ACC + self._temp_data + (self._registers.P & CARRY_FLAG)
+                )
+
+                # Clear N, O, Z, and C flags and set carry flag
+                self._registers.P = (self._registers.P & ~NOZC_FLAGS) | (self._arithmetic_result >> 8)
+
+                self._arithmetic_result &= 0xff
+
+                # Set negative, overflow, zero flags
+                self._registers.P |= (
+                    (self._arithmetic_result & NEGATIVE_FLAG)
+                    | (((self._registers.ACC ^ self._arithmetic_result) & (self._temp_data ^ self._arithmetic_result) & 0x80) >> 1)
+                    | ((not self._arithmetic_result) << 1)
+                )
+
+                self._registers.ACC = self._arithmetic_result
+            ### ADC
+
+            ### ADC_BCD
+            else: # Decimal mode, perform BCD addition
+                result = (
+                        (self._registers.ACC & 0x0F) + (self._temp_data & 0x0F) +
+                        (self._registers.P & CARRY_FLAG)
+                    )
+
+                self._registers.P = (
+                    self._registers.P & ~ZERO_FLAG
+                    if ((self._registers.ACC + self._temp_data + (self._registers.P & CARRY_FLAG)) & 0xff)
+                    else self._registers.P | ZERO_FLAG
+                )
+                if result >= 0x0a:
+                    result = ((result + 0x06) & 0x0f) + 0x10
+                bin_result = (self._registers.ACC & 0xf0) + (self._temp_data & 0xf0) + result
+                if bin_result >= 0xa0:
+                    bin_result += 0x60
+                self._registers.P = (
+                    self._registers.P | CARRY_FLAG
+                    if bin_result >= 0x100
+                    else self._registers.P & ~CARRY_FLAG
+                )
+
+                signed_acc = self._registers.ACC & 0xf0
+                signed_acc = signed_acc - (256 * (signed_acc >> 7))
+                signed_val = self._temp_data & 0xf0
+                signed_val = signed_val - (256 * (signed_val >> 7))
+                signed_result = signed_acc + signed_val + result
+                self._registers.P = (
+                    self._registers.P | NEGATIVE_FLAG
+                    if signed_result & NEGATIVE_FLAG
+                    else self._registers.P & ~NEGATIVE_FLAG
+                )
+                self._registers.P = (
+                    self._registers.P | OVERFLOW_FLAG
+                    if signed_result < -128 or signed_result > 127
+                    else self._registers.P & ~OVERFLOW_FLAG
+                )
+
+                self._registers.ACC = bin_result & 0xff
+            ### ADC_BCD
+
+            self._current_instruction = NULL
+
+        return 0
+
+    # SAX: A AND X -> Memory
+    cdef int SAX(self) except -1:
+        self._memory_bus.write(self._temp_address, self._registers.ACC & self._registers.X)
+        self._current_instruction = NULL
+        return 0
+
+    # SBX: (A AND X) - oper -> X
+    cdef int SBX(self) except -1:
+        self._temp_data = self._memory_bus.read(self._temp_address)
+        self._temp_data ^= 0xFF # Invert for subtraction
+
+        self._arithmetic_result = (
+            (self._registers.ACC & self._registers.X) + self._temp_data + 1
+        )
+
+        # SAX doesn't set V and never uses BCD even if decimal mode is set
+        # Sets flags similar to CMP
+
+        self._registers.P = (
+            self._registers.P & ~ZERO_FLAG
+            if (self._arithmetic_result & 0xFF)
+            else self._registers.P | ZERO_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | NEGATIVE_FLAG
+            if self._arithmetic_result & NEGATIVE_FLAG
+            else self._registers.P & ~NEGATIVE_FLAG
+        )
+
+        self._registers.P = (
+            self._registers.P | CARRY_FLAG
+            if (self._arithmetic_result >> 8)
+            else self._registers.P & ~CARRY_FLAG
+        )
+
+        self._registers.X = self._arithmetic_result & 0xFF
+        self._current_instruction = NULL
+        return 0
+
+    # SHA (AHX, AXA): A AND X AND (Address High-byte +1) -> M
+    cdef int SHA(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        self._temp_data = ((self._temp_address >> 8) + (0 if self._page_cross_occurred else 1)) & 0xFF # Address High-byte + 1
+
+        # If page cross occured, and lower nibble of (Address High-byte + 1) is 0, i.e. base_H low nibble was $F,
+        # then we get into the page boundary crossing problem where the arithmetic result replaces the address high byte
+        self._arithmetic_result = self._registers.ACC & self._registers.X & self._temp_data
+        if self._page_cross_occurred and not (self._temp_data & 0xF):
+            self._temp_address = (self._arithmetic_result << 8) | (self._temp_address & 0xFF)
+        self._page_cross_occurred = False
+        self._memory_bus.write(self._temp_address, self._arithmetic_result)
+        self._current_instruction = NULL
+        return 0
+
+    # SHX (SXA, XAS): X AND (Address High-byte +1) -> M
+    cdef int SHX(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        self._temp_data = ((self._temp_address >> 8) + (0 if self._page_cross_occurred else 1)) & 0xFF # Address High-byte + 1
+
+        # If page cross occured, and lower nibble of (Address High-byte + 1) is 0, i.e. base_H low nibble was $F,
+        # then we get into the page boundary crossing problem where the arithmetic result replaces the address high byte
+        self._arithmetic_result = self._registers.X & self._temp_data
+        if self._page_cross_occurred and not (self._temp_data & 0xF):
+            self._temp_address = (self._arithmetic_result << 8) | (self._temp_address & 0xFF)
+        self._page_cross_occurred = False
+        self._memory_bus.write(self._temp_address, self._arithmetic_result)
+        self._current_instruction = NULL
+        return 0
+
+    # SHY (SYA, SAY): Y AND (Address High-byte +1) -> M
+    cdef int SHY(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        self._temp_data = ((self._temp_address >> 8) + (0 if self._page_cross_occurred else 1)) & 0xFF # Address High-byte + 1
+
+        # If page cross occured, and lower nibble of (Address High-byte + 1) is 0, i.e. base_H low nibble was $F,
+        # then we get into the page boundary crossing problem where the arithmetic result replaces the address high byte
+        self._arithmetic_result = self._registers.Y & self._temp_data
+        if self._page_cross_occurred and not (self._temp_data & 0xF):
+            self._temp_address = (self._arithmetic_result << 8) | (self._temp_address & 0xFF)
+        self._page_cross_occurred = False
+        self._memory_bus.write(self._temp_address, self._arithmetic_result)
+        self._current_instruction = NULL
+        return 0
+
+    # SLO (ASO): M = C <- [76543210] <- C, A OR M -> A
+    cdef int SLO(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.read(self._temp_address)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._cycle_number = 2
+        else:
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x80
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data <<= 1
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._registers.ACC |= self._temp_data
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._current_instruction = NULL
+
+        return 0
+
+    # SRE (LSE): M = 0 -> [76543210] -> C, A XOR M -> A
+    cdef int SRE(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        if not self._cycle_number:
+            self._temp_data = self._memory_bus.read(self._temp_address)
+            self._cycle_number = 1
+        elif self._cycle_number == 1:
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._cycle_number = 2
+        else:
+            self._registers.P = (
+                self._registers.P | CARRY_FLAG
+                if self._temp_data & 0x01
+                else self._registers.P & ~CARRY_FLAG
+            )
+
+            self._temp_data >>= 1
+            self._memory_bus.write(self._temp_address, self._temp_data)
+            self._registers.ACC ^= self._temp_data
+
+            self._registers.P = (
+                self._registers.P & ~ZERO_FLAG
+                if self._registers.ACC
+                else self._registers.P | ZERO_FLAG
+            )
+            self._registers.P = (
+                self._registers.P | NEGATIVE_FLAG
+                if self._registers.ACC & NEGATIVE_FLAG
+                else self._registers.P & ~NEGATIVE_FLAG
+            )
+
+            self._current_instruction = NULL
+
+        return 0
+
+    # TAS (XAS, SHS): A AND X -> SP, A AND X AND (Address High-byte +1) -> M
+    cdef int TAS(self) except -1:
+        if self._page_cross_possible:
+            # Run a discarding cycle after any addressing mode where page cross was possible
+            if self._page_cross_occurred:
+                self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            else:
+                self._memory_bus.read(self._temp_address)
+
+            self._page_cross_possible = False
+            return 0
+
+        self._temp_data = ((self._temp_address >> 8) + (0 if self._page_cross_occurred else 1)) & 0xFF # Address High-byte + 1
+
+        # If page cross occured, and lower nibble of (Address High-byte + 1) is 0, i.e. base_H low nibble was $F,
+        # then we get into the page boundary crossing problem where the arithmetic result replaces the address high byte
+        self._arithmetic_result = self._registers.ACC & self._registers.X & self._temp_data
+        if self._page_cross_occurred and not (self._temp_data & 0xF):
+            self._temp_address = (self._arithmetic_result << 8) | (self._temp_address & 0xFF)
+        self._page_cross_occurred = False
+        self._registers.S = self._registers.ACC & self._registers.X
+        self._memory_bus.write(self._temp_address, self._arithmetic_result)
+        self._current_instruction = NULL
+        return 0
+
+    # NOP, DOP, TOP: A type of NOP that has additional amount of dummy reads based on the addressing mode.
+    cdef int NOP_ILLEGAL(self) except -1:
+        if self._page_cross_occurred: # Force extra dummy read by not resetting current instruction
+            self._memory_bus.read((self._temp_address - 0x100) & 0xFFFF) # Dummy read from previous page
+            self._page_cross_occurred = False
+        else:
+            self._memory_bus.read(self._temp_address)
+            self._page_cross_possible = False
+            self._current_instruction = NULL
+
+        return 0
+
+    # JAM, KIL, HLT: Halts the CPU until a reset
+    cdef int JAM(self) except -1:
+        # Will always do nothing, not even advance PC or load next instruction
         return 0
