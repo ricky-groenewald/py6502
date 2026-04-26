@@ -191,16 +191,30 @@ sentinel's behavior is user-configurable at runtime:
   propagates through the `except *` call chain to the UI. The UI pauses
   the simulator and only allows a reset to resume.
 
-Invalid opcodes follow a similar pattern in `MOS6502.load_op_code()`:
+Invalid opcode handling is tri-state, selected through
+`System.set_invalid_opcode_mode(mode)`:
 
-- **Crash** (default): raises `InvalidOPCode` with the opcode byte and
-  address. The UI catches it and pauses.
-- **NOP**: the invalid opcode is treated as a 2-cycle implied NOP and
-  execution continues.
+- **`mode = 0` — NOP**: an unrecognised opcode is treated as a
+  2-cycle implied NOP and execution continues.
+- **`mode = 1` — Crash** (default): raises `InvalidOPCode` with the
+  opcode byte and address. The UI catches it and pauses.
+- **`mode = 2` — Illegal-opcode simulation**: the dispatch table is
+  overlaid with the documented "illegal" / undocumented NMOS 6502
+  opcode set (LAX, SAX, DCP, ISC, SLO, SRE, RLA, RRA, ANC, ALR, ARR,
+  ANE, LXA, LAS, SBX, the H+1 store family SHA / SHX / SHY / TAS, the
+  `$EB` SBC alias, the multi-byte NOP family, and the `JAM` halts).
+  Switching back to mode 0 or 1 rebuilds the legal-only table from
+  scratch.
 
-Both settings are toggled through `System.set_unmapped_memory_mode()`
-and `System.set_invalid_opcode_mode()`, exposed in the UI's Settings
-menu.
+The mode switch composes correctly with BCD — `set_invalid_opcode_mode`
+re-applies `set_bcd_opcodes` afterwards if `P & D` is set, so the
+`$EB` cell tracks BCD state alongside the legal ADC/SBC family.
+
+Unmapped memory uses the same shape via
+`System.set_unmapped_memory_mode()`. Both are surfaced through the
+UI's Settings menu (the "Halt on invalid opcode" toggle currently
+covers modes 0 and 1; the illegal-opcode mode is exposed at the
+`System` API and is settable from Python).
 
 `BusController.add_component(component, address_start)`:
 
@@ -239,8 +253,10 @@ This design has two upsides:
 
 1. Decode cost is essentially zero after the first cycle of each
    instruction.
-2. Adding illegal opcodes (v0.2) or 65c02 opcodes (v0.3) is a matter of
-   filling more table entries, not rewriting the dispatcher.
+2. Adding new opcode sets — illegal/undocumented opcodes (now wired
+   up via `set_illegal_opcodes`, mode 2 of `set_invalid_opcode_mode`)
+   or 65c02 opcodes (v0.3) — is a matter of filling more table
+   entries, not rewriting the dispatcher.
 
 ### 3.4 `Memory`, `TextDisplay`, `Font`
 
@@ -333,7 +349,7 @@ cpdef void register_tick_hook(self, object component)
 cpdef unsigned char peek(self, unsigned short address)
 cpdef unsigned char poke(self, unsigned short address, unsigned char data)
 cpdef bint is_mapped(self, unsigned short address)
-cpdef void set_invalid_opcode_mode(self, unsigned char mode)
+cpdef void set_invalid_opcode_mode(self, unsigned char mode)  # 0=NOP, 1=Crash, 2=Illegal opcodes enabled
 cpdef void set_unmapped_memory_mode(self, bint crash)
 cpdef bint send_key(self, unsigned char char_)
 cpdef void clear_input_buffer(self)

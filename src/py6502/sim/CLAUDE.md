@@ -39,7 +39,10 @@ package is meant to honour them.
    `cdef` function pointers for (addressing-mode, opcode). New decoders
    (PPU, mappers) follow the same pattern: build the table once, index
    directly at runtime. Never `if opcode == 0xA9: … elif … elif …` on the
-   hot path.
+   hot path. The illegal-opcode set is layered on top of the legal table
+   by `MOS6502.set_illegal_opcodes()` and is toggled through
+   `MOS6502.set_invalid_opcode_mode(mode=2)` — same precomputed-table
+   discipline, no Python-level dispatch.
 4. **Direct pointers over object chains.** `BusController` stores a flat
    `MappedAddress[0x10000]` table with raw `PyObject*` pointers to the
    owning `Component` plus the component's internal offset. A CPU read is

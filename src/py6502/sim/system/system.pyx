@@ -306,6 +306,7 @@ cdef class System:
 
     cpdef void set_invalid_opcode_mode(self, unsigned char mode):
         # 0 = treat invalid opcodes as NOPs; 1 = raise InvalidOPCode.
+        # 2 = illegal opcode simulation mode
         # Toggled from the Settings window.
         self._cpu.set_invalid_opcode_mode(mode)
 

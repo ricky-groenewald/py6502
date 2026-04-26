@@ -56,6 +56,10 @@ cdef class MOS6502:
     cdef int load_op_code(self) except -1
     cdef void set_memory_bus(self, Component memory_bus)
     cdef void set_invalid_opcode_mode(self, unsigned char mode)
+
+    # Opcode Modifier Functions
+    cdef void set_opcodes(self)
+    cdef void set_illegal_opcodes(self)
     cdef void clear_bcd_opcodes(self)
     cdef void set_bcd_opcodes(self)
 
@@ -73,7 +77,7 @@ cdef class MOS6502:
     cdef int zero_page_x(self) except -1
     cdef int zero_page_y(self) except -1
 
-    # # Opcode functions
+    # Opcode functions
     cdef int ADC_SBC(self) except -1
     cdef int ADC_SBC_BCD(self) except -1
     cdef int AND(self) except -1
@@ -131,6 +135,28 @@ cdef class MOS6502:
     cdef int TXS(self) except -1
     cdef int TYA(self) except -1
 
+    # Illegal Opcode functions
+    cdef int ALR(self) except -1
+    cdef int ANC(self) except -1
+    cdef int ANE(self) except -1
+    cdef int ARR(self) except -1
+    cdef int DCP(self) except -1
+    cdef int ISC(self) except -1
+    cdef int LAS(self) except -1
+    cdef int LAX(self) except -1
+    cdef int LXA(self) except -1
+    cdef int RLA(self) except -1
+    cdef int RRA(self) except -1
+    cdef int SAX(self) except -1
+    cdef int SBX(self) except -1
+    cdef int SHA(self) except -1
+    cdef int SHX(self) except -1
+    cdef int SHY(self) except -1
+    cdef int SLO(self) except -1
+    cdef int SRE(self) except -1
+    cdef int TAS(self) except -1
+    cdef int NOP_ILLEGAL(self) except -1
+    cdef int JAM(self) except -1
 
 # Module-level inline step helper. Body lives in the pxd so the C compiler
 # can fold it into any module that cimports it (notably
