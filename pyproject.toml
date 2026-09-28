@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=42", "wheel", "Cython"]
+requires = ["setuptools>=77", "wheel", "Cython"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "py6502"
 version = "0.2.0"
 description = "Emulator of everything 6502. A cycle-accurate 6502 simulator and a DearPyGui frontend, aimed at hobbyists, educators, and retro-computing enthusiasts."
 authors = [{name = "Ricky Groenewald", email = "6112032+ricky-groenewald@users.noreply.github.com"}]
-license = {file = "LICENSE"}
+license = "PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE", "NOTICE"]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
