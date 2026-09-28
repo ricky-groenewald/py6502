@@ -19,6 +19,8 @@ windows/                  DearPyGui modals and panels
 ├── binaryloader.py       Binary load dialog (absolute address)
 ├── settings.py           Settings window
 └── about.py              Custom About dialog
+widgets/                  Reusable pieces shared by several windows
+└── binary_source_picker.py  File-or-bundled-asset picker (binary loader + custom system builder)
 utils/                    Small helpers
 ├── keyhandler.py         Keyboard input handler (DPG key → Apple I ASCII)
 ├── instructionmaps.py    Opcode lookup tables
@@ -40,8 +42,12 @@ while dpg.is_dearpygui_running():
     dt = min(now - last_tick_time, MAX_CATCH_UP_SECONDS)
     last_tick_time = now
     if self.system is not None:
-        self._drain_keys_into_system()
-        self.system.run_for_microseconds(int(dt * 1_000_000))
+        if self._sim_running:
+            self._drain_keys_into_system()
+            try:
+                self.system.run_for_microseconds(int(dt * 1_000_000))
+            except (InvalidOPCode, UnallocatedAddressError) as exc:
+                self._on_sim_error(exc)   # pauses the sim until Reset/Play
         self._debug.refresh(self.system)
     dpg.render_dearpygui_frame()
 ```

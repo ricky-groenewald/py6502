@@ -8,9 +8,11 @@ design decisions that shaped them.
 
 The tagline is **"Emulator of everything 6502"**: a free, hobbyist-friendly
 platform for emulating real 6502-era machines and for building new ones on
-the same substrate. The source is public and free to use and redistribute;
-copyright is retained and commercial use is not permitted (see `LICENSE`).
-Each milestone below adds one big capability to the platform.
+the same substrate. The source is public under the PolyForm
+Noncommercial License 1.0.0: free to use, change, and share for
+personal, educational, research, and non-profit purposes; commercial
+use is not permitted (see `LICENSE` and `NOTICE`). Each milestone below
+adds one big capability to the platform.
 
 ---
 
@@ -47,9 +49,11 @@ wrong here, every later release pays for it.
   abstractions, not a special case in `System.get_framebuffer`.
 - Pytest fixtures + a performance regression test that fails loudly if a
   Python loop sneaks back into a hot path. The Klaus Dormann functional and
-  Bruce Clark decimal conformance suites moved to v0.3 (see
-  [#50](https://github.com/ricky-groenewald/py6502/issues/50)) once the
-  upstream GPL-3.0 licensing ruled out bundling them as sim assets.
+  Bruce Clark decimal conformance suites moved to v0.2 (see
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50)): the
+  upstream GPL-3.0 binaries are fetched at run time instead of bundled as
+  sim assets. The performance regression test itself is
+  [#79](https://github.com/ricky-groenewald/py6502/issues/79).
 - GitHub Actions CI that builds the Cython extensions and runs the full
   pytest suite (with `@pytest.mark.slow` for the Klaus runs).
 - Fix undefined-behaviour on invalid opcodes / unmapped memory accesses.
@@ -83,13 +87,31 @@ frequency. The NES has a CPU bus *and* a PPU bus running at a 3× divider
 off the master clock, plus an APU on the CPU side. `SystemConfig.buses` is
 already a `dict[str, BusSpec]` for exactly this reason (see
 `docs/SYSTEM_CONFIG.md` §buses), but the clocking model itself has to become
-divider-aware before it's useful.
+divider-aware before it's useful. The shape is settled: see the
+foundation bullets below and `docs/ARCHITECTURE.md` §4.
 
 **Scope.**
 
-- Variable timing / multi-bus clock model. `System` owns the master clock
-  and ticks each bus according to its divisor. No Python loops in steady
-  state — this is the most load-bearing performance change in v0.2.
+- **Bus refactor foundation**, in order: a hot-path guard test and a
+  recorded throughput baseline
+  ([#79](https://github.com/ricky-groenewald/py6502/issues/79)); move the
+  cycle loop from `BusController` into `System`
+  ([#80](https://github.com/ricky-groenewald/py6502/issues/80)); an
+  address mask, `remove_component`, and a mirror mask on `Memory`
+  ([#81](https://github.com/ricky-groenewald/py6502/issues/81)); schema
+  version 2 with `master_hz`, a `processors` list, component ids, and
+  `mirror` ([#82](https://github.com/ricky-groenewald/py6502/issues/82));
+  cross-component lookup plus `bind` and `reset` fan-out to every
+  component ([#83](https://github.com/ricky-groenewald/py6502/issues/83));
+  and a CPU interrupt line model
+  ([#84](https://github.com/ricky-groenewald/py6502/issues/84)). The
+  Apple I stays bit-identical throughout.
+- Variable timing / multi-unit clock model
+  ([#27](https://github.com/ricky-groenewald/py6502/issues/27)). `System`
+  owns the master clock and steps each processing unit at its divider,
+  iterating the fastest unit with integer accumulators for the rest. No
+  Python loops in steady state — this is the most load-bearing
+  performance change in v0.2.
 - A `PPU` component (background, sprites, tile/character map rendering). The
   PPU does *not* reuse `TextDisplay`; it is a first-class graphics peripheral
   that produces its own framebuffer.
@@ -97,7 +119,18 @@ divider-aware before it's useful.
 - NES controller input as a proper input peripheral.
 - Cartridge loader + mapper support (start with NROM / MMC1 / UxROM — the
   minimum to run the well-known test carts and small homebrew games).
-- Illegal / undocumented 6502 opcodes.
+- Illegal / undocumented 6502 opcodes — **done** in
+  [#78](https://github.com/ricky-groenewald/py6502/pull/78). The UI
+  toggle and disassembler mnemonics follow in
+  [#85](https://github.com/ricky-groenewald/py6502/issues/85).
+- Save states ([#75](https://github.com/ricky-groenewald/py6502/issues/75)):
+  snapshot and restore of every component's state. NES-primary but not
+  NES-only.
+- A short note on the CPU core's cycle state machine
+  ([#86](https://github.com/ricky-groenewald/py6502/issues/86)) so CPU
+  work such as the dummy-read audit
+  ([#77](https://github.com/ricky-groenewald/py6502/issues/77)) has a
+  primary reference in the repo.
 - **Multiprocessing sim/frontend split.** Move the simulator into its own OS
   process so the DearPyGui (or successor) frontend no longer shares a GIL
   with the sim tick loop. The one-coarse-call-per-frame contract already
@@ -112,14 +145,19 @@ divider-aware before it's useful.
   switching to `pyimgui`, or dropping ImGui entirely in favour of a thin
   raylib / pyglet / SDL2 setup. Writing a custom Dear ImGui binding from
   scratch is explicitly *not* on the list.
-- CI: test coverage expanded to cover the PPU, mappers, and multi-bus
-  clocking; nestest-style regression runs wired into the Klaus-style harness.
+- Conformance and CI: Klaus Dormann and Bruce Clark runners under
+  `scripts/` with run-time fetch of the GPL-3.0 binaries
+  ([#50](https://github.com/ricky-groenewald/py6502/issues/50)), and a
+  GitHub Actions workflow that builds the extensions and runs pytest plus
+  the runners ([#4](https://github.com/ricky-groenewald/py6502/issues/4)).
+  Coverage grows to the PPU, mappers, and multi-unit clocking as they
+  land; nestest ([#73](https://github.com/ricky-groenewald/py6502/issues/73))
+  joins the same harness.
 
 **Open issues in GitHub milestone "v0.2 Release - Famicom / NES release":**
 
 - [#2](https://github.com/ricky-groenewald/py6502/issues/2) — 6502: Create tests
 - [#4](https://github.com/ricky-groenewald/py6502/issues/4) — Github actions: Automated testing upon pushing / PR / etc.
-- [#6](https://github.com/ricky-groenewald/py6502/issues/6) — Add 6502 illegal opcodes support
 - [#12](https://github.com/ricky-groenewald/py6502/issues/12) — NES Emulation
 - [#13](https://github.com/ricky-groenewald/py6502/issues/13) — Cartridge Loading / Mappers
 - [#14](https://github.com/ricky-groenewald/py6502/issues/14) — Character / Tile map display
@@ -146,6 +184,15 @@ divider-aware before it's useful.
 - [#73](https://github.com/ricky-groenewald/py6502/issues/73) — nestest CPU conformance runner in CI
 - [#74](https://github.com/ricky-groenewald/py6502/issues/74) — PAL NES sim-side support
 - [#75](https://github.com/ricky-groenewald/py6502/issues/75) — Save states (snapshot + restore emulator state)
+- [#77](https://github.com/ricky-groenewald/py6502/issues/77) — Audit indexed-addressing dummy-read addresses across all opcode families
+- [#79](https://github.com/ricky-groenewald/py6502/issues/79) — Hot-path Python-call guard test and v0.1 performance baseline
+- [#80](https://github.com/ricky-groenewald/py6502/issues/80) — Decouple the cycle pump from BusController into System
+- [#81](https://github.com/ricky-groenewald/py6502/issues/81) — BusController address mask, remove_component, and Memory mirror mask
+- [#82](https://github.com/ricky-groenewald/py6502/issues/82) — Schema version 2: master clock, processors list, component ids, mirror field
+- [#83](https://github.com/ricky-groenewald/py6502/issues/83) — Cross-component references and lifecycle fan-out
+- [#84](https://github.com/ricky-groenewald/py6502/issues/84) — CPU interrupt line model
+- [#85](https://github.com/ricky-groenewald/py6502/issues/85) — Expose illegal-opcode mode in the UI
+- [#86](https://github.com/ricky-groenewald/py6502/issues/86) — Document the MOS6502 cycle state machine
 
 #2 and #4 are "v0.1 foundation" issues that live in the v0.2 milestone only
 because pytest/CI work will grow substantially as NES features land. The
@@ -173,12 +220,6 @@ fixture scaffolding itself ships in v0.1; v0.2 expands it.
 - A packaged, themed DearPyGui build so the app stops looking like "raw
   dearpygui with default widgets".
 - 65C02 opcode support.
-- CI-fetched Klaus Dormann / Bruce Clark conformance runners with perf
-  reporting (see
-  [#50](https://github.com/ricky-groenewald/py6502/issues/50)). GitHub
-  Actions pulls the upstream GPL-3.0 binaries at job time and invokes thin
-  runners checked in under `scripts/`; no wheel bundling, no submodule, no
-  GPL bytes in the distribution.
 
 **Open issues in GitHub milestone "v0.3 Release - Development Tools":**
 
@@ -199,8 +240,9 @@ design decisions don't accidentally close the door on them:
   breadboard computer. The IaC config format is explicitly designed so these
   arrive as new YAML presets + new Cython components, not as new `System`
   subclasses.
-- A save-state / rewind system, built on top of the fact that every
-  `Component` already owns all its mutable state.
+- A rewind system layered on the v0.2 save states
+  ([#75](https://github.com/ricky-groenewald/py6502/issues/75)), built on
+  the fact that every `Component` already owns all its mutable state.
 - A headless mode for batch-running assembly programs (useful for CI,
   teaching, and test authoring).
 - A web build via Pyodide or a native WASM recompile of the Cython core.

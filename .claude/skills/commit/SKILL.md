@@ -184,7 +184,21 @@ After the commit lands, and **only** after, run the PR flow:
    Read the full commit range, not just `HEAD`. The PR description
    summarises the whole branch.
 
-3. **Draft the PR body** using this template, filled from the commits +
+3. **Doc-drift check.** For every function, class, field, file, or
+   config key the branch renamed, re-signatured, moved, or removed,
+   grep for the *old* name across the prose that describes the code:
+
+   ```bash
+   grep -rn "<old name>" docs/ README.md CLAUDE.md src/py6502/*/CLAUDE.md \
+       src/py6502/*/README.md .claude/skills .claude/agents
+   ```
+
+   Fix every hit on the branch before opening the PR. If a hit is
+   genuinely out of scope, list it under a `Docs touched` line in the
+   PR body so it is tracked, not forgotten. Root `CLAUDE.md` makes the
+   three `docs/` files a contract: code and doc change in the same PR.
+
+4. **Draft the PR body** using this template, filled from the commits +
    diff:
 
    ```markdown
@@ -208,7 +222,7 @@ After the commit lands, and **only** after, run the PR flow:
    part that ages well; write it for someone reading the PR six months
    from now.
 
-4. **Create the PR into `dev`** via HEREDOC:
+5. **Create the PR into `dev`** via HEREDOC:
 
    ```bash
    gh pr create --base dev --title "<same headline as the commit, or a tighter summary>" --body "$(cat <<'EOF'
@@ -222,7 +236,7 @@ After the commit lands, and **only** after, run the PR flow:
    that covers the full range rather than reusing the last commit's
    headline verbatim.
 
-5. Print the PR URL that `gh pr create` returned so the caller can
+6. Print the PR URL that `gh pr create` returned so the caller can
    click through.
 
 Never PR directly into `main`. Versioned releases are the only path

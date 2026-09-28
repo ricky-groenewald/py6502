@@ -6,7 +6,7 @@ module is the only place that maps those strings to the actual Cython
 classes. Registering a type here is the one step required to make a
 new component reachable from IaC configs.
 
-See docs/SYSTEM_CONFIG.md §5 for rationale (security, clear errors,
+See docs/SYSTEM_CONFIG.md §6 for rationale (security, clear errors,
 discoverability, decoupling).
 """
 from py6502.sim.bus import Memory

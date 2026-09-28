@@ -18,8 +18,10 @@ bus/          Component base class, BusController, Memory, EmptyAddress
 cpu/          MOS6502 (cycle-accurate, precomputed [256][2] dispatch)
 graphics/     TextDisplay + Font (character-grid renderer)
 peripherals/  Apple1Display, Apple1Keyboard
-system/       System façade, YAML loader, component registry, config dataclasses
-assets/       Bundled BIOS ROMs, fonts, preset YAML configs
+system/       System façade, YAML loader, component registry, config dataclasses,
+              and writer.py (SystemConfig → YAML for saved custom systems)
+manifest.py   Reads assets/manifest.yaml for the bundled-binary picker
+assets/       Bundled BIOS ROMs, fonts, preset YAML configs, manifest.yaml
 ```
 
 Each subpackage exposes its public API via its own `__init__.py` shim so
@@ -29,7 +31,7 @@ package you write:
 ```python
 from py6502.sim.bus import BusController, Memory
 from py6502.sim.cpu import MOS6502
-from py6502.sim.peripherals import Apple1
+from py6502.sim.peripherals import Apple1Display, Apple1Keyboard
 ```
 
 ## The shape of a running machine
@@ -39,8 +41,9 @@ from py6502.sim.peripherals import Apple1
    component's internal buffer. Unmapped slots fall through to an
    `EmptyAddress` sentinel.
 2. `Component` is the cdef base class for anything addressable. Subclasses
-   override `cdef unsigned char read(self, unsigned short offset)` and
-   `cdef void write(self, unsigned short, unsigned char)`.
+   override `cdef int read(self, unsigned short offset) except -1` and
+   `cdef int write(self, unsigned short offset, unsigned char value) except -1`.
+   Both return the byte (0..255); `-1` is the error sentinel.
 3. `MOS6502` is cycle-accurate. It holds a `Registers` struct and a
    precomputed `[256][2]` dispatch table of (addressing-mode, opcode)
    `cdef` function pointers — there is no Python-level decode in steady

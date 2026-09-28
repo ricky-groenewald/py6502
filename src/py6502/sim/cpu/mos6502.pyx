@@ -34,7 +34,7 @@ cdef class MOS6502:
     def __init__(self) -> None:
         # Initialize internal and external variables
         self._memory_bus = None
-        self._invalid_opcode_mode = 1  # 0 = NOP, 1 = crash (default)
+        self._invalid_opcode_mode = 1  # 0 = NOP, 1 = crash (default), 2 = illegal-opcode simulation
         self._cycle_number = 0x00
         self._temp_data = 0x00
         self._temp_address = 0x0000

@@ -49,7 +49,7 @@ package is meant to honour them.
    one table lookup, one C cast, one virtual `cdef` call — that's the
    bar. Don't walk a list of components on every access.
 5. **Reuse buffers; no per-frame allocations.** Framebuffers, keyboard
-   buffers, scanline buffers — allocate once in `__cinit__`, mutate in
+   buffers, scanline buffers — allocate once at construction, mutate in
    place. Every `bytes(...)` / `bytearray(...)` / list-comprehension on
    the hot path is a regression.
 6. **`cdef inline` the tiny helpers.** Small address-math / flag-update
@@ -94,12 +94,16 @@ mapper, PPU register window, …):
 
 1. Create `py6502/sim/<subpackage>/<name>.pxd` + `.pyx`.
 2. The class inherits from `py6502.sim.bus.component.Component` and
-   overrides `cdef unsigned char read(self, unsigned short offset)` and
-   `cdef void write(self, unsigned short offset, unsigned char value)`.
-   `offset` is already the component-relative offset — the `BusController`
-   computes it for you.
-3. `__cinit__` allocates every buffer the component will ever need. No
-   allocations in `read` / `write`.
+   overrides `cdef int read(self, unsigned short offset) except -1` and
+   `cdef int write(self, unsigned short offset, unsigned char value) except -1`.
+   Both return the byte (0..255); `-1` is reserved as the error sentinel
+   that lets Cython propagate exceptions cheaply, so never return it on
+   purpose. `offset` is already the component-relative offset — the
+   `BusController` computes it for you.
+3. Allocate every buffer the component will ever need at construction —
+   in `__init__` right after `super().__init__`, as the existing
+   components do — and free it in `__dealloc__`. No allocations in
+   `read` / `write`.
 4. Register the class string → class mapping in the component registry
    (see `docs/SYSTEM_CONFIG.md` §Component registry) so it is reachable
    from IaC configs.
@@ -133,18 +137,18 @@ up front and keep it cycle-exact.
 
 ## Testing
 
-- pytest fixtures live in `tests/` (landing in v0.1). Each fixture builds
-  a minimal `System` with exactly the components the test needs.
+- pytest fixtures live in `tests/`. Each fixture builds a minimal
+  `System` with exactly the components the test needs.
 - **Klaus Dormann 6502 functional test** and **Bruce Clark decimal test**
-  are wired up in CI (see issue #50, milestone v0.3) — GitHub Actions
-  fetches the upstream GPL-3.0 binaries at job time and invokes thin
-  conformance runners checked in under `scripts/`. The same invocation
-  works locally after fetching the binaries by hand. A Klaus run takes
-  ~96M cycles.
-- There is a dedicated **performance regression test** whose entire job
-  is to fail loudly if someone reintroduces a Python loop on the hot path.
-  If it fails after your change, treat it as a real failure — don't "just
-  bump the threshold".
+  run by hand today from a local scratch script; they are not in the
+  repo or in CI. #50 (v0.2) adds thin conformance runners under
+  `scripts/` that fetch the upstream GPL-3.0 binaries at run time, so
+  the same command works locally and in CI without bundling GPL bytes.
+  A Klaus run takes ~96M cycles.
+- A dedicated **hot-path guard test** is planned in #79: it fails loudly
+  if someone reintroduces a Python call on the hot path. Once it lands,
+  treat a failure after your change as a real failure — don't "just bump
+  the threshold".
 - No Python unit test is allowed to reach *into* a Cython class's internals
   with `cdef` access. Go through the Python-visible API. If the Python API
   doesn't expose something you need to verify, that's worth a conversation
@@ -155,7 +159,7 @@ up front and keep it cycle-exact.
 `cpu/mos6502.pyx` is the most load-bearing file in the repo. Changes here
 need:
 
-- The full Klaus + Bruce Clark suites green.
+- The full Klaus + Bruce Clark suites green (run by hand until #50).
 - A before/after cycle count on a representative workload (e.g. 10 seconds
   of wall-clock time booting wozmon and running a small program).
 - A note in the PR description explaining *why* the change is correct,

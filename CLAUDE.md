@@ -33,7 +33,7 @@ src/py6502/            single top-level package
 │   ├── peripherals/   Apple1Display, Apple1Keyboard, future devices
 │   ├── system/        System façade + YAML loader + component registry
 │   └── assets/        Bundled BIOS ROMs, fonts, preset configs
-└── ui/                DearPyGui frontend (Py6502App + windows/systems/utils)
+└── ui/                DearPyGui frontend (Py6502App + windows/widgets/utils)
 docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP
 play/                  Scratch 6502 asm + binaries; not part of the package
 ```
@@ -44,8 +44,10 @@ play/                  Scratch 6502 asm + binaries; not part of the package
   `pip install -e .` — needed after any change to a `.pyx` or `.pxd`.
 - **Run the UI**: `python -m py6502` → `src/py6502/__main__.py` (which
   just calls `Py6502App().run()`).
-- **Tests**: `pytest`. Fixtures + CI land with v0.1. Klaus Dormann /
-  Bruce Clark suites run under `@pytest.mark.slow`.
+- **Tests**: `pytest` runs the unit tests under `tests/` in under a
+  second. There is no CI yet (#4). The Klaus Dormann and Bruce Clark
+  conformance suites run by hand until #50 lands runners under
+  `scripts/`.
 - **Python**: `>=3.12`. Compile flags in `setup.py`: `-O3 -march=native -flto`
   (tuned for the host CPU — expect rebuilds when moving machines).
 
