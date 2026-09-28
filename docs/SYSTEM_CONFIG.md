@@ -675,7 +675,7 @@ The `version:` field at the top of every config is the schema version.
 - Multi-bus support (`buses:` with non-`main` entries)
 - `master_hz` and a `processors:` list with a clock `divider` per unit.
   Replaces `cpu.hz`; version 1 files are migrated on load.
-- Mirrored address mappings (`mirror:` mask on memory regions and
+- Mirrored address mappings (`mirrors:` count on memory regions and
   component specs)
 - Component `id:` fields for cross-component references
 - CPU variants (`R2A03`, `W65C02S`)
@@ -687,10 +687,13 @@ The `version:` field at the top of every config is the schema version.
 These are documented here so the v0.1 implementation doesn't paint us
 into a corner:
 
-- **Mirroring.** v0.2 adds an optional `mirror:` mask on memory regions
-  and component specs. The component is registered once over the full
-  mirrored range and its internal address is `offset & mask`, so a
-  runtime mirror-mode change is one field update, not a table rewrite
+- **Mirroring.** v0.2 adds an optional `mirrors:` count on memory
+  regions and component specs, written the way hardware manuals put it:
+  "2 KiB mirrored 4 times". The component is registered once over
+  `size × mirrors` addresses and its internal address is
+  `offset & (size - 1)`, so `size` must be a power of two. The mask is
+  derived by the loader, never written by the author, and a runtime
+  mirror-mode change is one field update, not a table rewrite
   ([#81](https://github.com/ricky-groenewald/py6502/issues/81),
   [#82](https://github.com/ricky-groenewald/py6502/issues/82)).
 - **Non-contiguous address maps.** Rare but useful. v0.3 may add

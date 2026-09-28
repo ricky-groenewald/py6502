@@ -97,10 +97,10 @@ foundation bullets below and `docs/ARCHITECTURE.md` §4.
   ([#79](https://github.com/ricky-groenewald/py6502/issues/79)); move the
   cycle loop from `BusController` into `System`
   ([#80](https://github.com/ricky-groenewald/py6502/issues/80)); an
-  address mask, `remove_component`, and a mirror mask on `Memory`
+  address mask, `remove_component`, and a `mirrors` count on `Memory`
   ([#81](https://github.com/ricky-groenewald/py6502/issues/81)); schema
   version 2 with `master_hz`, a `processors` list, component ids, and
-  `mirror` ([#82](https://github.com/ricky-groenewald/py6502/issues/82));
+  `mirrors` ([#82](https://github.com/ricky-groenewald/py6502/issues/82));
   cross-component lookup plus `bind` and `reset` fan-out to every
   component ([#83](https://github.com/ricky-groenewald/py6502/issues/83));
   and a CPU interrupt line model
@@ -187,12 +187,13 @@ foundation bullets below and `docs/ARCHITECTURE.md` §4.
 - [#77](https://github.com/ricky-groenewald/py6502/issues/77) — Audit indexed-addressing dummy-read addresses across all opcode families
 - [#79](https://github.com/ricky-groenewald/py6502/issues/79) — Hot-path Python-call guard test and v0.1 performance baseline
 - [#80](https://github.com/ricky-groenewald/py6502/issues/80) — Decouple the cycle pump from BusController into System
-- [#81](https://github.com/ricky-groenewald/py6502/issues/81) — BusController address mask, remove_component, and Memory mirror mask
-- [#82](https://github.com/ricky-groenewald/py6502/issues/82) — Schema version 2: master clock, processors list, component ids, mirror field
+- [#81](https://github.com/ricky-groenewald/py6502/issues/81) — BusController address mask, remove_component, and Memory mirrors
+- [#82](https://github.com/ricky-groenewald/py6502/issues/82) — Schema version 2: master clock, processors list, component ids, mirrors field
 - [#83](https://github.com/ricky-groenewald/py6502/issues/83) — Cross-component references and lifecycle fan-out
 - [#84](https://github.com/ricky-groenewald/py6502/issues/84) — CPU interrupt line model
 - [#85](https://github.com/ricky-groenewald/py6502/issues/85) — Expose illegal-opcode mode in the UI
 - [#86](https://github.com/ricky-groenewald/py6502/issues/86) — Document the MOS6502 cycle state machine
+- [#89](https://github.com/ricky-groenewald/py6502/issues/89) — Config errors carry file name and line number
 
 #2 and #4 are "v0.1 foundation" issues that live in the v0.2 milestone only
 because pytest/CI work will grow substantially as NES features land. The
