@@ -3,7 +3,7 @@ YAML → SystemConfig loader + source-URI resolver.
 
 Parses, validates, and converts a system-config YAML file into the
 frozen ``SystemConfig`` dataclass tree. Validation follows
-docs/SYSTEM_CONFIG.md §7 in the order listed there; the first failing
+docs/SYSTEM_CONFIG.md §8 in the order listed there; the first failing
 rule raises ``ConfigError`` with a human-readable message.
 """
 from __future__ import annotations

@@ -25,12 +25,15 @@ windows/         DearPyGui modals and panels
 ├── video.py              Video output window + texture management
 ├── debug.py              Debug panel (controls, registers, memory monitor)
 ├── systemselector.py     System selection modal (presets + user YAMLs)
-├── binaryloader.py       Binary load dialog (region + offset)
+├── binaryloader.py       Binary load dialog (absolute address + bundled-asset picker)
 ├── settings.py           Settings window
 └── about.py              Custom About dialog
+widgets/         Reusable pieces shared by several windows
+└── binary_source_picker.py  File-or-bundled-asset picker
 utils/           Small helpers
 ├── keyhandler.py         Keyboard input handler
 ├── instructionmaps.py    Opcode lookup tables
+├── paths.py              Per-user data directory (settings, DPG ini, saved configs)
 ├── presets.py            Preset YAML discovery
 └── settings.py           Settings persistence (JSON)
 themes.py        ThemeManager — DearPyGui theme factories
@@ -77,8 +80,10 @@ pause.
    `py6502.sim.assets.presets/` and shows any previously loaded user
    configs from `py6502_settings.json`.
 3. The user picks a preset or browses for a custom YAML file.
-4. `Py6502App._load_system(yaml_path)` calls `System.from_yaml_file`,
-   wires the resulting instance into the UI, and persists the choice.
+4. `Py6502App._load_system(yaml_path)` calls the loader's
+   `from_yaml_file_with_options(yaml_path, option_values)` (so the user's
+   preset option choices are applied), builds `System(config)`, wires the
+   instance into the UI, and persists the choice.
 
 Adding a new machine is a new preset YAML in the assets directory —
 **not** a new branch inside `app.py`.

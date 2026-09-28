@@ -43,6 +43,11 @@ cdef class Font:
                    0x60..0x7F → 0x40..0x5F quirk lives in
                    Apple1Display, not here).
 
+    Known gap: the unpack loop in ``_create_character_set`` indexes glyph
+    bytes from byte 0, so it does not currently skip the header byte the
+    layout above describes. This is tracked for the v0.3 font-maker work
+    (see docs/ROADMAP.md); fix the loader there, not this docstring.
+
     The unpacked pixel grid is stored as a flat ``bint`` array indexed
     by ``(char * height + y) * width + x`` so per-pixel lookup at draw
     time is one multiply-add and one indirect load.
@@ -102,11 +107,12 @@ cdef class TextDisplay:
     - ``_screen_buffer[y][x]`` holds a *colour index* (0/1/2 — see
       ``_colors``), not a packed RGBA value. Index-land is 1 byte per
       pixel; the 4× RGBA expansion happens once per frame in
-      ``get_screen_buffer`` and lands in ``_rgba_buffer``.
+      ``render_framebuffer`` and lands in ``_rgba_buffer``.
     - ``_rgba_buffer`` is the single, stable RGBA float buffer the
       frontend's DearPyGui raw texture is bound to. Allocated once in
-      ``__init__``, mutated in place by ``get_screen_buffer``, and
+      ``__init__``, mutated in place by ``render_framebuffer``, and
       never reassigned — rebinding it would break the texture.
+      ``get_screen_buffer`` only returns a reference to it.
       ``_rgba_view`` is a ``float[::1]`` memoryview over the same
       storage for cdef-speed writes.
     - ``_cursor_pos_(x|y)`` are *character* coordinates inside the
@@ -114,7 +120,7 @@ cdef class TextDisplay:
     - ``_start_cursor_row`` is the character-row index that the renderer
       treats as the top of the screen. When CR scrolls past the bottom,
       we just advance this index modulo ``_character_max_rows`` and
-      clear the freshly-exposed line — no copy. ``get_screen_buffer``
+      clear the freshly-exposed line — no copy. ``render_framebuffer``
       unwraps the rotation when it walks the buffer to RGBA.
     - ``_cursor_mode``: 0 = off, 1 = blinking, 2 = solid. The blinking
       timer cadence is 30 frames per phase (≈half a second at 60 FPS).

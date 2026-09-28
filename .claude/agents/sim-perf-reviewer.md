@@ -12,8 +12,8 @@ report.
 
 ## The rules you enforce
 
-These are verbatim from `src/py6502/sim/CLAUDE.md`. If a change violates
-any of them, it's a finding.
+These summarise `src/py6502/sim/CLAUDE.md`; that file is the authority.
+If a change violates any of them, it's a finding.
 
 1. **No Python loops in steady state.** Any `for` / `while` that runs
    per-cycle or per-frame must live inside a `cdef` function with a
@@ -26,6 +26,9 @@ any of them, it's a finding.
 3. **Precompute dispatch tables.** If you see a long `if opcode == 0xA9:
    ... elif ...` chain or a `dict` lookup on the hot path for instruction
    decode, flag it. The pattern is `[256][2]` `cdef` function pointers.
+   The illegal-opcode set is layered onto the legal table by
+   `MOS6502.set_illegal_opcodes()` and toggled via
+   `set_invalid_opcode_mode(2)` — same precomputed-table discipline.
 4. **Direct pointers over object chains.** `BusController` uses
    `MappedAddress[0x10000]` with raw `PyObject*`. Walking a list of
    components per read/write is a finding. Looking up components by name
@@ -33,7 +36,8 @@ any of them, it's a finding.
 5. **Reuse buffers; no per-frame allocations.** `bytes(...)`,
    `bytearray(...)`, list comprehensions, or `np.array(...)` in a
    function that runs per-frame or per-cycle are all findings. Buffers
-   should be allocated in `__cinit__` and mutated in place.
+   should be allocated once at construction (`__init__` right after
+   `super().__init__`, or `__cinit__`) and mutated in place.
 6. **`cdef inline` for tiny helpers.** Small flag-update / address-math
    helpers written as regular `cdef` (or worse, `def`) functions are a
    soft finding — suggest `cdef inline`.

@@ -13,10 +13,11 @@
 ```
  ┌───────────────────────────────────┐
  │           py6502.ui               │   Pure-Python DearPyGui frontend.
- │   Py6502App — one on_update()     │   One coarse call per UI frame.
- │   per frame drives the emulator.  │
+ │   Py6502App.run() — one coarse    │   One coarse call per UI frame,
+ │   sim call per frame, paced by    │   sized by wall-clock elapsed time.
+ │   wall-clock dt.                  │
  └──────────────┬────────────────────┘
-                │  System.run_for_microseconds(16667)
+                │  System.run_for_microseconds(dt_µs)
                 ▼
  ┌───────────────────────────────────┐
  │    py6502.sim.system.System       │   Cython orchestrator. Built from a
@@ -59,10 +60,12 @@ src/py6502/
 ├── __main__.py                    # python -m py6502 → Py6502App().run()
 ├── sim/                           # Cython simulator (hot path)
 │   ├── __init__.py
+│   ├── manifest.py                # Loads assets/manifest.yaml for the binary picker
 │   ├── assets/                    # Fonts, BIOSes, preset configs
 │   │   ├── bios/
 │   │   ├── fonts/
-│   │   └── presets/               # Preset .yaml configs
+│   │   ├── presets/               # Preset .yaml configs
+│   │   └── manifest.yaml          # Bundled-binary manifest
 │   ├── bus/
 │   │   ├── component.pxd/.pyx     # Component base class + tick hooks
 │   │   ├── buscontroller.pxd/.pyx # Flat 64K MappedAddress table
@@ -79,12 +82,14 @@ src/py6502/
 │       ├── config.py              # Frozen dataclass representation
 │       ├── registry.py            # Type-name → class registry
 │       ├── loader.py              # YAML → SystemConfig + validation
+│       ├── writer.py              # SystemConfig → YAML (saved user configs)
 │       └── system.pxd/.pyx        # Orchestrator
 └── ui/                            # DearPyGui frontend (pure Python)
     ├── __init__.py
     ├── app.py                     # Py6502App — menu bar, per-frame loop
     ├── themes.py                  # ThemeManager — DearPyGui theme factories
-    ├── utils/                     # Key handler, settings, preset discovery
+    ├── utils/                     # Key handler, settings, preset discovery, per-user paths
+    ├── widgets/                   # Reusable widgets (binary source picker)
     └── windows/                   # Video, debug, system selector, etc.
 ```
 
@@ -101,11 +106,11 @@ cdef class Component:
     cdef unsigned int _size
     cdef str _name
 
-    cdef unsigned char read(self, unsigned short address) except *:
-        return 0
+    cdef int read(self, unsigned short address) except -1:
+        raise NotImplementedError
 
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
-        return 0
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
+        raise NotImplementedError
 
     cdef void bind(self, object system):
         pass
@@ -127,7 +132,10 @@ Every addressable thing in the simulator — RAM, ROM, peripherals, even
 the bus controller itself — is a `Component`. The `read` and `write`
 methods are **`cdef`**, not `cpdef`, so they're called through Cython's
 internal virtual table with zero Python overhead once Cython knows the
-object is a `Component`.
+object is a `Component`. Both return `int` with `-1` reserved as the
+error sentinel (`except -1`): the happy-path value is always the byte
+(0 to 255), and an exception raised inside a component propagates with
+one integer compare per call instead of a `PyErr_Occurred()` check.
 
 `bind(system)` is a late-binding hook fired by `System.__init__` after
 every component has been wired onto its bus. Components that need
@@ -142,13 +150,13 @@ Subclasses override `read` and `write` to implement their behavior:
 
 ```cython
 cdef class Memory(Component):
-    cdef unsigned char[::1] _data
+    cdef unsigned char* _data        # malloc'd once, freed in __dealloc__
     cdef bint _read_only
 
-    cdef unsigned char read(self, unsigned short address) except *:
+    cdef int read(self, unsigned short address) except -1:
         return self._data[address]
 
-    cdef unsigned char write(self, unsigned short address, unsigned char data) except *:
+    cdef int write(self, unsigned short address, unsigned char data) except -1:
         if not self._read_only:
             self._data[address] = data
         return data
@@ -163,7 +171,7 @@ component uses*:
 ```cython
 ctypedef struct MappedAddress:
     PyObject* component         # owning Component, borrowed PyObject*
-    unsigned int internal_address
+    unsigned short internal_address
 
 cdef class BusController(Component):
     cdef MappedAddress _component_address_map[0x10000]
@@ -188,8 +196,8 @@ sentinel's behavior is user-configurable at runtime:
 - **Open bus** (default): reads return the last value on the data bus,
   writes are silently dropped. This matches real 6502 hardware behavior.
 - **Crash**: reads and writes raise `UnallocatedAddressError`, which
-  propagates through the `except *` call chain to the UI. The UI pauses
-  the simulator and only allows a reset to resume.
+  propagates through the `except -1` sentinel chain to the UI. The UI
+  pauses the simulator and only allows a reset to resume.
 
 Invalid opcode handling is tri-state, selected through
 `System.set_invalid_opcode_mode(mode)`:
@@ -238,12 +246,12 @@ bus, injected at construction via `set_memory_bus`:
 ```cython
 cdef class MOS6502:
     cdef Registers _registers
-    cdef Component _memory_bus            # typed — compile-time dispatch
-    cdef object[:, :] _instruction_func   # precomputed [256][2] table
+    cdef Component _memory_bus                    # typed — compile-time dispatch
+    cdef instruction_func[256][2] _instructions   # C function-pointer table
 ```
 
-`_instruction_func` is a **precomputed dispatch table** built once at
-construction time. Each entry holds a pair of `cdef` function pointers:
+`_instructions` is a **precomputed dispatch table** of C function
+pointers built once at construction time. Each entry holds a pair of `cdef` function pointers:
 one for the addressing mode, one for the operation. `MOS6502.clock()`
 reads the opcode at `PC`, looks up the two functions in the table, and
 calls them — **no Python-level opcode dispatch, ever**, not even via a
@@ -260,9 +268,9 @@ This design has two upsides:
 
 ### 3.4 `Memory`, `TextDisplay`, `Font`
 
-- **`Memory`** is a `Component` that wraps a contiguous
-  `unsigned char[::1]` memoryview. `read_only` regions silently drop
-  writes (matching real hardware ROM behavior).
+- **`Memory`** is a `Component` that owns a C byte array allocated
+  once with `malloc`. `read_only` regions silently drop writes
+  (matching real hardware ROM behavior).
 - **`TextDisplay`** owns a character-grid framebuffer and a `Font`. It
   exposes `place_character(ch)`, `backspace()`, `clear_screen()`,
   `render_framebuffer()` (invoked once per UI frame by
@@ -328,17 +336,21 @@ cdef class System:
     cdef tuple _memory_config             # MemoryRegion tuple, kept for runtime binary loads
 ```
 
-Construction is described in detail in [SYSTEM_CONFIG.md §9](SYSTEM_CONFIG.md#9-how-system-builds-from-a-config).
-In short: resolve CPU → build buses → wire memory → wire display → wire
-inputs → wire audio/other → `bind()` every component → reset.
+Construction is described in detail in [SYSTEM_CONFIG.md §10](SYSTEM_CONFIG.md#10-how-system-builds-from-a-config).
+In short: resolve CPU → build buses → wire memory → load binaries →
+wire display → wire inputs → wire audio/other → `bind()` the display
+and input components → reset. `audio` and `other` components are not
+bound today, and `reset()` reaches only the CPU;
+[#83](https://github.com/ricky-groenewald/py6502/issues/83) extends
+both to every component.
 
 The **external API** is deliberately tiny:
 
 ```cython
-cpdef void run_cycles(self, unsigned long master_cycles)
-cpdef void run_for_microseconds(self, unsigned long microseconds)
-cpdef unsigned long step_cycle(self)       # debug: advance one CPU clock cycle
-cpdef unsigned long step_instruction(self) # debug: advance one full instruction
+cpdef void run_cycles(self, unsigned long cycles) except *
+cpdef void run_for_microseconds(self, unsigned long microseconds) except *
+cpdef unsigned long step_cycle(self) except *        # debug: advance one CPU clock cycle
+cpdef unsigned long step_instruction(self) except *  # debug: advance one full instruction
 cpdef void reset(self)
 cpdef void load_binary_at(self, unsigned int address, bytes data)
 cpdef Registers get_registers(self)
@@ -385,42 +397,57 @@ layered on top of these primitives.
 ### v0.1: single bus, 1:1 master → bus
 
 ```cython
-cpdef void run_cycles(self, unsigned long master_cycles):
-    if master_cycles:
-        (<BusController>self._buses["main"]).run_cycles(master_cycles)
+cpdef void run_cycles(self, unsigned long cycles) except *:
+    if cycles:
+        (<BusController>self._buses["main"]).run_cycles(cycles)
 
-cpdef void run_for_microseconds(self, unsigned long microseconds):
+cpdef void run_for_microseconds(self, unsigned long microseconds) except *:
     if microseconds:
         (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
+    self.sync_display()
 ```
 
-The frontend calls `system.run_for_microseconds(16667)` once per UI
-frame (60 Hz → 16.67 ms → 16667 µs → 16667 cycles at 1 MHz). That one
-call executes thousands of 6502 cycles entirely in Cython.
-`BusController.run_cycles(N)` fans out a single
+The frontend calls `system.run_for_microseconds(µs)` once per UI
+frame, where `µs` is the wall-clock time since the previous frame,
+capped by `MAX_CATCH_UP_SECONDS` (see `src/py6502/ui/CLAUDE.md`). At
+60 Hz and 1 MHz that is roughly 16,667 cycles per call, all executed
+in Cython. `BusController.run_cycles(N)` fans out a single
 `on_cycles_elapsed(N)` call per registered tick hook after the inner
 loop — **not** once per cycle — so components that need cycle-accurate
 timing (e.g. `Apple1Display`'s DSP busy bit) pay one C virtual call
 per batch.
 
-### v0.2: multi-bus with per-bus dividers
+### v0.2: master clock and processing units (planned)
 
-NES has two buses: the CPU bus (1.789 MHz) and the PPU bus (5.369 MHz —
-3× CPU). `run_cycles(master)` will loop at the **master clock**
-granularity and tick each bus according to its divider:
+The NES has two clocked chips: the CPU at master/12 and the PPU at
+master/4 (NTSC), so the PPU ticks three times per CPU cycle. PAL is
+master/16 and master/5, a non-integer 3.2:1 ratio. The agreed
+direction, tracked in
+[#27](https://github.com/ricky-groenewald/py6502/issues/27) and its
+prerequisites [#79](https://github.com/ricky-groenewald/py6502/issues/79)
+to [#84](https://github.com/ricky-groenewald/py6502/issues/84):
 
-```cython
-cpdef void run_cycles(self, unsigned long master_cycles):
-    cdef unsigned long i
-    for i in range(master_cycles):
-        for bus_name, divider in self._bus_dividers.items():
-            if i % divider == 0:
-                self._buses[bus_name].clock()
-```
+- The cycle loop moves from `BusController` into `System`
+  ([#80](https://github.com/ricky-groenewald/py6502/issues/80)). The
+  bus becomes a pure address router.
+- A `ProcessingUnit` base class (`tick()`, `reset()`, `bind()`) sits
+  above `MOS6502` and the PPU. `System` keeps a typed CPU slot and
+  calls the inlined CPU step for it; other units live in a fixed-size
+  C array with their dividers.
+- The loop iterates the **fastest** unit, not the master clock. Slower
+  units fire from integer accumulators (NTSC: CPU every third PPU dot;
+  PAL: add 5 per dot, step the CPU when the total reaches 16). Single-
+  unit systems such as the Apple I keep a dedicated loop that is
+  bit-identical to today's.
+- Tick hooks move to `System`, keyed by clock domain. The default is
+  the CPU domain, so `Apple1Display` does not change.
+- Config gains `master_hz` and a `processors` list with per-unit
+  dividers ([#82](https://github.com/ricky-groenewald/py6502/issues/82)).
+  Version 1 configs keep loading.
 
-The **external API does not change**. v0.1 configs that only declare a
-`main` bus keep working; v0.2 NES configs add `buses.ppu` with a
-divider. See [SYSTEM_CONFIG.md §3.3](SYSTEM_CONFIG.md#33-buses).
+The **external API does not change**: `run_for_microseconds` stays the
+single coarse entry point. See
+[SYSTEM_CONFIG.md §3.3](SYSTEM_CONFIG.md#33-buses) for the bus block.
 
 ---
 
@@ -432,25 +459,35 @@ The top-level DearPyGui shell. v0.1 scope is deliberately minimal. Its
 responsibilities:
 
 - Create the DearPyGui context, viewport, and menu bar on startup.
-- Load the Apple I preset via `System.from_yaml_file(...)` and assign
+- Load a system from a preset or user YAML via the loader's
+  `from_yaml_file_with_options(...)` and `System(config)`, and assign
   the result to `self.system`.
-- Run a single per-frame loop that drains key presses via
+- Run a single per-frame loop (`Py6502App.run()`) that measures the
+  wall-clock time since the last frame, drains key presses via
   `self.system.send_key(char)`, calls
-  `self.system.run_for_microseconds(16667)`, pushes the framebuffer
-  into the DearPyGui texture, and then calls
-  `dpg.render_dearpygui_frame()`.
+  `self.system.run_for_microseconds(dt_µs)` once, refreshes the debug
+  panel, and then calls `dpg.render_dearpygui_frame()`. The video
+  texture is a DearPyGui raw texture bound to the sim's RGBA buffer at
+  system-load time, so nothing is pushed per frame.
 
 **Everything inside that loop is an O(1) or O(N_on_screen) operation —
 never O(cycles).**
 
-### 5.2 System selector (planned)
+### 5.2 System selector
 
-The system-selector modal — a presets browser that reads
-`py6502.sim.assets.presets/*.yaml`, lets the user pick one (and
-eventually tweak its preset options via per-system configurators under
-The system selector modal auto-discovers preset YAMLs from bundled
-assets and supports user-loaded YAML configs. Settings are persisted to
-`py6502_settings.json` alongside the DearPyGui layout file.
+The system selector ("New System") is a two-pane window. The **left
+pane** picks what kind of system to launch, in three groups: bundled
+presets discovered from `py6502.sim.assets.presets/*.yaml`, previously
+loaded user configs (each with a remove button, plus "Load from
+file..." to add one), and a custom-system entry. The **right pane**
+shows and configures whatever is selected on the left: for a preset or
+user config, its name, description, author, tags, and the preset
+options rendered as widgets (see
+[SYSTEM_CONFIG.md §3.8](SYSTEM_CONFIG.md#38-options)); for the custom
+entry, the custom-system builder form. Launch and Cancel sit below both
+panes. User config paths and the last-used option values persist in
+`py6502_settings.json` in the per-user data directory
+(`src/py6502/ui/utils/paths.py`), alongside the DearPyGui layout file.
 
 ---
 
@@ -479,30 +516,32 @@ apple_i.yaml
 ```
 Py6502App.run() — DearPyGui frame loop
        │
+       │ dt = min(now - last_tick, MAX_CATCH_UP_SECONDS)
        ▼
-  emulator.on_update():
+  if the sim is running:
        │
-       ├── drain UI key buffer → input device.add_character_to_kb_buffer()
+       ├── drain UI key buffer → system.send_key(char)
        │
-       ├── system.run_for_microseconds(16667)
-       │       │
-       │       ├── BusController.run_cycles(16667)
-       │       │       │
-       │       │       ▼
-       │       │   for _ in 16667: MOS6502.clock()
-       │       │       │
-       │       │       ▼
-       │       │   each clock reads/writes bus → component.read/write (cdef)
-       │       │
-       │       └── sync_display()  → display.render_framebuffer()
-       │               (cursor blink + index→RGBA flatten into the
-       │                raw-texture-bound buffer)
+       └── system.run_for_microseconds(dt_µs)
+               │
+               ├── BusController.run_cycles(N)     # N = dt_µs × cpu_hz / 1e6
+               │       │
+               │       ▼
+               │   for _ in range(N): _mos6502_step(cpu)
+               │       │
+               │       ▼
+               │   each cycle reads/writes bus → component.read/write (cdef)
+               │
+               └── sync_display()  → display.render_framebuffer()
+                       (cursor blink + index→RGBA flatten into the
+                        raw-texture-bound buffer)
        │
-       └── (the framebuffer is already up to date; no Python-level
-            upload needed here — the DPG raw texture is bound to it)
+       ├── debug panel refresh (every frame, running or paused, so
+       │   Step / Cycle results show up immediately)
        │
        ▼
-  dpg.render_dearpygui_frame()   # DPG re-uploads the bound buffer to the GPU
+  dpg.render_dearpygui_frame()   # DPG re-uploads the bound buffer to the GPU;
+                                 # nothing is pushed from Python per frame
 ```
 
 ### 6.3 Read cycle inside the CPU
@@ -549,8 +588,7 @@ version:
 
 ## 8. Testing strategy
 
-Detailed in the test plan (see
-[ROADMAP.md](ROADMAP.md)). The architectural summary:
+### Present today
 
 - **Unit tests** under `tests/` cover the `System` build pipeline end
   to end: config loader (`test_system_loader.py`,
@@ -558,26 +596,44 @@ Detailed in the test plan (see
   `test_binaries.py`), config writer round-trip (`test_writer.py`),
   asset manifest (`test_manifest.py`), per-user config paths
   (`test_paths.py`), runtime binary loading
-  (`test_runtime_load_binary.py`), Apple I region split
-  (`test_apple1_split.py`), and the strict-mode error paths for
-  invalid opcodes (`test_invalid_opcode.py`) and unmapped memory
-  (`test_unmapped_memory.py`).
-- **Klaus 6502 functional tests** and **Bruce Clark decimal tests**
-  are deferred to v0.3 (see issue
-  [#50](https://github.com/ricky-groenewald/py6502/issues/50)). The
-  upstream binaries are GPL-3.0, so the v0.3 plan fetches them at CI
-  time rather than vendoring them in the wheel; thin runners under
-  `scripts/` will invoke them once that lands.
-- A **performance regression test** whose entire job is to fail loudly
-  if a Python loop sneaks back into the hot path is on the v0.1 punch
-  list and will land alongside the Klaus harness in v0.3 (it needs the
-  Klaus binary as its representative workload).
+  (`test_runtime_load_binary.py`), Apple I region split and DSP
+  timing (`test_apple1_split.py`), and the strict-mode error paths
+  for invalid opcodes (`test_invalid_opcode.py`) and unmapped memory
+  (`test_unmapped_memory.py`). Plain `pytest` runs them in well under
+  a second.
+- **Conformance, by hand.** The Klaus Dormann functional test and the
+  Bruce Clark decimal test pass, but the scripts that run them are
+  local-only on the maintainer's machine and are **not committed**.
+  The binaries come from
+  [amb5l/6502_65C02_functional_tests](https://github.com/amb5l/6502_65C02_functional_tests)
+  and are GPL-3.0, which is why neither they nor the scripts are in
+  this repository.
+
+### Planned
+
+- **Conformance runners in the repo** —
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50) (v0.2).
+  Thin runners under `scripts/` that fetch the binaries at run time,
+  so CI and contributors invoke them the same way and no GPL bytes
+  enter the distribution.
+- **Hot-path guard test and throughput baseline** —
+  [#79](https://github.com/ricky-groenewald/py6502/issues/79). Fails
+  if any Python function is reached from inside `run_cycles`. Lands
+  before the bus refactor starts.
+- **CI** — [#4](https://github.com/ricky-groenewald/py6502/issues/4).
+  Builds the extensions, runs `pytest` and the conformance runners.
+  Scheduled alongside
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50).
+- **nestest** —
+  [#73](https://github.com/ricky-groenewald/py6502/issues/73), once
+  the NES CPU work lands.
 
 ---
 
 ## 9. What's deliberately *not* here
 
-- **Persistence / save states.** No plan for v0.1; v0.3 target.
+- **Persistence / save states.** Not in v0.1. Scheduled for v0.2 as
+  [#75](https://github.com/ricky-groenewald/py6502/issues/75).
 - **Netplay, rewind, TAS.** Out of scope entirely.
 - **Dynamic component reloading.** Once `System` is built, its topology
   is frozen. Changing machines means destroying the `System` and

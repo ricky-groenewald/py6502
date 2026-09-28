@@ -115,8 +115,10 @@ cpu:
 ```
 
 The CPU type string resolves through the same registry as components
-([§6](#6-the-component-registry)). `hz` is the **master clock** —
-per-bus dividers are applied on top of this in v0.2.
+([§6](#6-the-component-registry)). `hz` is the CPU clock. v0.2
+replaces it with a top-level `master_hz` plus a per-unit `divider`
+([#82](https://github.com/ricky-groenewald/py6502/issues/82)); version 1
+files keep loading.
 
 v0.1 registered CPU types:
 
@@ -145,9 +147,12 @@ buses:
   main:
     address_width: 16
   ppu:
-    address_width: 14
-    divider: 3             # PPU runs 3x CPU clock (forward-compat, not v0.1)
+    address_width: 14      # forward-compat, not v0.1
 ```
+
+Clock dividers do not live on buses. In v0.2 they live on the
+processing units in the `processors` list
+([#82](https://github.com/ricky-groenewald/py6502/issues/82)).
 
 **Validator constraint (v0.1):** only `main` is allowed. Any other bus
 name fails validation with `Bus 'X' is not supported in schema version 1`.
@@ -211,10 +216,11 @@ display:
 | `bus`     | string            | no       | `"main"` | Which bus the component sits on.                   |
 | `params`  | dict[str, Any]    | no       | `{}`     | Type-specific keyword arguments.                   |
 
-**Contract:** a display component must expose a `get_framebuffer()`
-method returning an RGBA buffer of its native dimensions. `System` keeps
-a direct reference to it so `System.get_framebuffer()` never needs a
-string lookup.
+**Contract:** a display component must override `get_framebuffer()`,
+a pure getter returning its preallocated RGBA buffer, and
+`render_framebuffer()`, the once-per-frame refresh into that buffer.
+`System` keeps a direct reference to it so `System.get_framebuffer()`
+and `System.sync_display()` never need a string lookup.
 
 ### 3.6 `inputs`
 
@@ -428,8 +434,8 @@ all binary data so the user never has to supply their own files. The
 
 **User configs** live anywhere on the user's filesystem. They use
 `file:` URIs (resolved relative to the config file's directory) for
-binary data. The `New System` dialog exposes "Load config from file…"
-to pick one.
+binary data. The `New System` dialog exposes "Load from file..." to
+pick one.
 
 A user can save a preset + their custom edits as a new user config.
 
@@ -456,12 +462,20 @@ the load with a clear error message pointing at the offending line.
 5. **Memory region names are unique** within the config.
 6. **Memory regions don't overlap** on the same bus.
 7. **Component addresses don't overlap** memory regions or each other on
-   the same bus.
+   the same bus. The loader cannot know a component's size without
+   instantiating it, so this check runs at build time inside
+   `BusController.add_component`, which raises `AddressRangeUnavailable`
+   rather than `ConfigError`. The loader only checks that the declared
+   address fits the bus (Rule 8).
 8. **Addresses fit the bus.** `start + size <= 2**address_width`.
 9. **`buses` constraints.** v0.1 only accepts `main`.
 10. **Source URIs resolve.** `resource:` packages must be importable;
     `file:` paths (relative to the config's dir) must exist.
-11. *(reserved)*
+11. *(reserved)* — was the per-region `source` size check, removed in
+    [#56](https://github.com/ricky-groenewald/py6502/pull/56) when
+    binaries moved to the top-level `binaries:` list. The number is
+    kept so the `Rule N:` prefixes in loader error messages stay
+    stable.
 12. **Option targets resolve.** For every entry in `options:`, the
     declared `target:` path must resolve into the raw config (region
     name exists, list index in range, intermediate mappings are dicts
@@ -477,13 +491,12 @@ the load with a clear error message pointing at the offending line.
       inside the union of memory regions on that bus, with no gaps;
     - no two binaries on the same bus may overlap.
 
-Validation failures raise `py6502.sim.system.ConfigError` with a message
-of the form:
+Validation failures raise `py6502.sim.system.ConfigError`. Messages
+name the rule and the offending values. They do not carry a file name
+or line number today:
 
 ```
-ConfigError: apple_i.yaml:12: memory region 'RAM' overlaps with 'ROM' on bus 'main'
-    RAM:  0x0000..0x1FFF
-    ROM:  0x1800..0x1FFF
+ConfigError: Rule 6: memory region 'RAM' (0x0000..0x1FFF) overlaps with 'ROM' (0x1800..0x1FFF)
 ```
 
 ---
@@ -561,17 +574,26 @@ class SystemConfig:
     author: Optional[str] = None
     tags: tuple[str, ...] = ()
     options: tuple[OptionSpec, ...] = ()
-
-    @classmethod
-    def from_yaml_file(cls, path: Path) -> "SystemConfig": ...
-
-    @classmethod
-    def from_yaml_text(cls, text: str, base_dir: Path) -> "SystemConfig": ...
 ```
 
 Dataclasses are frozen so they can be safely shared, hashed, and used as
 cache keys. `list` fields become `tuple`s in the dataclass form for the
 same reason.
+
+`SystemConfig` itself has no loader methods. Loading lives in
+`py6502.sim.system.loader` and is re-exported from `py6502.sim.system`:
+
+```python
+from_yaml_file(path) -> SystemConfig
+from_yaml_file_with_options(path, option_values) -> SystemConfig
+from_yaml_text(text, base_dir, option_values=None) -> SystemConfig
+```
+
+`System.from_yaml_file(path)` is a convenience classmethod on the
+orchestrator that calls the loader and builds the machine in one step.
+`ConfigError` is defined in `py6502.sim.system.config` and re-exported
+from `py6502.sim.system`. The reverse direction, `SystemConfig` back to
+YAML, is `py6502.sim.system.writer` (`to_yaml_text`, `write_yaml_file`).
 
 ---
 
@@ -610,22 +632,25 @@ same reason.
 
 ### Clocking
 
-`System` owns the clock loop. Peripherals do **not** drive their own
-clock anymore:
+`System` owns the clock entry points. Peripherals do **not** drive
+their own clock:
 
 ```cython
-cpdef void run_cycles(self, unsigned long master_cycles):
+cpdef void run_cycles(self, unsigned long cycles) except *:
     # v0.1: single bus, 1:1 master → bus
-    self._buses["main"].run_cycles(master_cycles)
-
-cpdef void run_for_microseconds(self, unsigned long microseconds):
-    cdef unsigned long cycles = (microseconds * self._cpu_hz) // 1000000
     if cycles:
-        self.run_cycles(cycles)
+        (<BusController>self._buses["main"]).run_cycles(cycles)
+
+cpdef void run_for_microseconds(self, unsigned long microseconds) except *:
+    # cycles = microseconds * cpu_hz // 1_000_000, computed on the bus
+    if microseconds:
+        (<BusController>self._buses["main"]).run_for_microseconds(microseconds, self._cpu_hz)
+    self.sync_display()
 ```
 
-v0.2 introduces per-bus dividers so the PPU bus runs 3× the CPU bus off
-a single master cycle count. The external API doesn't change.
+v0.2 moves the loop itself into `System` and adds a master clock with
+per-unit dividers. The external API doesn't change. See
+[ARCHITECTURE.md §4](ARCHITECTURE.md#4-clocking).
 
 ---
 
@@ -644,11 +669,15 @@ The `version:` field at the top of every config is the schema version.
   support) → new version number. The loader refuses to load old
   versions unless a migration path is provided.
 
-**v0.2 additions that will bump the version to `2`:**
+**v0.2 additions that will bump the version to `2`**
+([#82](https://github.com/ricky-groenewald/py6502/issues/82)):
 
 - Multi-bus support (`buses:` with non-`main` entries)
-- Per-bus clock dividers
-- Mirrored address mappings (`mirror:` on components)
+- `master_hz` and a `processors:` list with a clock `divider` per unit.
+  Replaces `cpu.hz`; version 1 files are migrated on load.
+- Mirrored address mappings (`mirrors:` count on memory regions and
+  component specs)
+- Component `id:` fields for cross-component references
 - CPU variants (`R2A03`, `W65C02S`)
 
 ---
@@ -658,9 +687,15 @@ The `version:` field at the top of every config is the schema version.
 These are documented here so the v0.1 implementation doesn't paint us
 into a corner:
 
-- **Mirroring.** v0.2 adds `mirror: {stride: N, count: M}` as an
-  optional field on component specs. The flatten step in `System`
-  decomposes this into `M` calls to `BusController.add_component`.
+- **Mirroring.** v0.2 adds an optional `mirrors:` count on memory
+  regions and component specs, written the way hardware manuals put it:
+  "2 KiB mirrored 4 times". The component is registered once over
+  `size × mirrors` addresses and its internal address is
+  `offset & (size - 1)`, so `size` must be a power of two. The mask is
+  derived by the loader, never written by the author, and a runtime
+  mirror-mode change is one field update, not a table rewrite
+  ([#81](https://github.com/ricky-groenewald/py6502/issues/81),
+  [#82](https://github.com/ricky-groenewald/py6502/issues/82)).
 - **Non-contiguous address maps.** Rare but useful. v0.3 may add
   `address_ranges: [[start, size], ...]` for components with
   non-contiguous register files. No use case in v0.1 or v0.2.
@@ -672,7 +707,8 @@ into a corner:
   `displays: list[ComponentSpec]` with a schema version bump.
 - **Save states.** Serialization of a running `System` back to something
   roughly config-shaped, with a `state:` block capturing RAM, registers,
-  and per-peripheral state. v0.3 work.
+  and per-peripheral state. v0.2 work
+  ([#75](https://github.com/ricky-groenewald/py6502/issues/75)).
 - **Font-maker tool output.** When the v0.3 font-maker ships, custom
   font files can be referenced from display component `params:` via
   `file:` URIs.

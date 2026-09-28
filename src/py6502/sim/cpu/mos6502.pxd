@@ -26,7 +26,7 @@ cdef class MOS6502:
     cdef Component _memory_bus
 
     # Internal variables
-    cdef unsigned char _invalid_opcode_mode  # 0 = NOP, 1 = crash
+    cdef unsigned char _invalid_opcode_mode  # 0 = NOP, 1 = crash, 2 = illegal-opcode simulation
     cdef unsigned char _cycle_number
     cdef unsigned char _temp_data
     cdef unsigned short _temp_address

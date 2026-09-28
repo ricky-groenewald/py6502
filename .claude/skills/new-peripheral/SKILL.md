@@ -30,9 +30,10 @@ Ask the caller (once, up front) for:
 1. **Name** in PascalCase, e.g. `VIA6522`, `MMC1`, `C64CIA`.
 2. **Subpackage** under `src/py6502/sim/`: usually `peripherals`, but
    could be a new one like `mappers` if the PR is introducing it.
-3. **Registry string** — the lowercase string used to refer to the
-   component from a `SystemConfig` YAML file, e.g. `via6522`, `mmc1`.
-   Default: lowercase of the class name.
+3. **Registry string** — the string used to refer to the component from
+   a `SystemConfig` YAML file. Registry keys are the PascalCase class
+   name, e.g. `VIA6522`, `MMC1` (see `Apple1Display` / `Apple1Keyboard`
+   in `src/py6502/sim/system/registry.py`). Default: the class name.
 4. **Short one-line description** for the class docstring and the
    registry entry.
 
@@ -65,18 +66,33 @@ from py6502.sim.bus.component cimport Component
 cdef class <Name>(Component):
     """<short description>"""
 
-    def __cinit__(self, unsigned short address, unsigned short size):
-        # Allocate every buffer the component will ever need here.
-        # No allocations in read/write.
-        pass
+    def __init__(self) -> None:
+        # size = number of bus addresses the component occupies. The
+        # base address is NOT a constructor argument — the bus assigns
+        # it in BusController.add_component.
+        super().__init__(<size>, "<Name>")
 
-    cdef unsigned char read(self, unsigned short offset):
+    cdef int read(self, unsigned short offset) except -1:
         # offset is component-relative; BusController already mapped it.
+        # Return the byte (0..255). -1 is reserved as the error sentinel.
         return 0
 
-    cdef void write(self, unsigned short offset, unsigned char value):
-        pass
+    cdef int write(self, unsigned short offset, unsigned char value) except -1:
+        # Return the byte written (0..255). -1 is reserved as the error sentinel.
+        return value
 ```
+
+Buffers (a framebuffer, a FIFO) are allocated once at construction and
+never reallocated. The existing components `malloc` them in `__init__`
+right after `super().__init__` and free them in `__dealloc__`; see
+`Apple1Keyboard` for the pattern. Use `__cinit__` only if the buffer
+must exist before any Python-level `__init__` can run.
+
+Optional overrides live on `Component` and are documented in
+`src/py6502/sim/bus/component.pyx`: `bind(system)` for cross-component
+refs and tick-hook subscription, `on_cycles_elapsed(n)` for batch-end
+cycle accounting, `get_framebuffer()` / `render_framebuffer()` for
+displays, and `send_input()` / `clear_input()` for keyboard-like devices.
 
 The header comment + class docstring must contain the short description
 the caller supplied. No other comments.
@@ -105,17 +121,16 @@ Create the `__init__.py` with a one-line docstring if it doesn't exist.
 
 ### 5. Component registry entry
 
-Once the registry file lives at `src/py6502/sim/system/registry.py` (it
-will be created when the `system` module is (re)built against the IaC
-spec), add:
+Add the class to `COMPONENT_REGISTRY` in
+`src/py6502/sim/system/registry.py`, grouped with its siblings:
 
 ```python
-"<registry-string>": <Name>,
+"<Name>": <Name>,
 ```
 
-Until that file exists, print a clear note that the registry entry is
-pending the `system` rewrite and can't be wired up yet — don't silently
-skip it.
+The key is the PascalCase class name. Import the class at the top of
+`registry.py` via the subpackage `__init__.py` shim, not the `.pyx`
+module directly.
 
 ## Post-scaffold checklist the skill prints
 
@@ -128,7 +143,8 @@ it off:
                                           # import smoke test
 [ ] Write a pytest fixture that maps <Name> onto a minimal System
     and round-trips one read and one write through it.
-[ ] Fill in __cinit__ buffers and read/write logic.
+[ ] Fill in buffers and read/write logic.
+[ ] read/write return the byte (0..255) on every path; never return -1.
 [ ] Update docs/SYSTEM_CONFIG.md appendix if this adds a new preset.
 [ ] Run sim-perf-reviewer on the new file.
 ```
@@ -138,8 +154,9 @@ it off:
 - **Do not implement `read` / `write` logic.** Stubs only. The author
   fills in the actual behaviour in a follow-up edit — that's where the
   interesting work is and it needs a human's judgement.
-- **Do not allocate anything in `read`/`write`.** The template explicitly
-  puts allocations in `__cinit__`.
+- **Do not allocate anything in `read`/`write`.** Buffers are allocated
+  once at construction (`__init__`, or `__cinit__` for buffers that must
+  never be reallocated).
 - **Do not add Python-visible tick methods.** If the new component needs
   to do per-cycle work, the shape is a `cdef` method on `Component`, not
   a Python method the frontend calls in a loop.

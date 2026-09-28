@@ -26,6 +26,10 @@ preset / user-config / custom-system pickers, a debug panel with
 step-level debugging and a memory monitor, a runtime binary loader, and
 configurable settings.
 
+**v0.2** (Famicom / NES) is in progress on `dev`. The first steps are a
+bus-controller refactor and a master clock that can drive more than one
+processing unit; see [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
 ## Prerequisites
 
 - **Python 3.12+**
@@ -75,23 +79,35 @@ Controls:
 - **Play / Pause** — start or stop continuous execution
 - **Step** — advance one full 6502 instruction (only when paused)
 - **Cycle** — advance one CPU clock cycle (only when paused)
-- **Reset** — reset the CPU and all peripherals
+- **Reset** — reset the CPU. Peripherals keep their state today;
+  [#83](https://github.com/ricky-groenewald/py6502/issues/83) extends
+  reset to every component.
 
 ### Loading binaries
 
-**File > Load Binary** opens a dialog where you select a `.bin` or `.rom`
-file, choose a target memory region from the system config, and specify a
-hex offset within that region.
+**File > Load Binary** opens a dialog where you pick a `.bin` or `.rom`
+file from disk, or a bundled asset such as wozmon, and enter the
+absolute hex address to load it at. Bundled assets pre-fill their
+default address.
 
 ### Settings
 
 **File > Settings** opens the settings window:
 - **Start with last used system** — skip the system selector on startup
-- **Halt on invalid opcode** — raise an error on undefined opcodes
+- **Halt on invalid opcode** — raise an error on undefined opcodes.
+  When off, undefined opcodes run as 2-cycle NOPs. A third mode that
+  simulates the NMOS illegal opcodes exists at the `System` API
+  (`set_invalid_opcode_mode(2)`); exposing it in the UI is
+  [#85](https://github.com/ricky-groenewald/py6502/issues/85).
 - **Halt on unmapped memory** — raise an error on access to unmapped
   addresses
 
-Settings are saved to `py6502_settings.json` and persist across sessions.
+Settings are saved to `py6502_settings.json` in the per-user data
+directory, next to the window-layout file, and persist across sessions:
+
+- macOS: `~/Library/Application Support/py6502/`
+- Linux: `$XDG_DATA_HOME/py6502/` (falls back to `~/.local/share/py6502/`)
+- Windows: `%LOCALAPPDATA%\py6502\`
 
 ## Repository layout
 
@@ -108,7 +124,8 @@ src/py6502/            single top-level package
     ├── app.py         Py6502App — viewport, menu bar, frame loop
     ├── themes.py      ThemeManager
     ├── windows/       Video, debug, system selector, binary loader, etc.
-    └── utils/         Key handler, settings, preset discovery
+    ├── widgets/       Reusable widgets (binary source picker)
+    └── utils/         Key handler, settings, preset discovery, per-user paths
 docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP
 play/                  Hand-written 6502 asm + scratch experiments
 ```
