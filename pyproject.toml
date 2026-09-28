@@ -16,6 +16,7 @@ dependencies = [
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
+    "License :: Other/Proprietary License",
     "Intended Audience :: Developers",
     "Intended Audience :: Education",
     "Intended Audience :: Science/Research",

@@ -141,6 +141,12 @@ Before opening a PR:
 
 ## License
 
-Copyright retained by Ricky Groenewald. `py6502` is free to use and
-redistribute for personal, educational, and hobbyist purposes; commercial
-use is not permitted. See [`LICENSE`](LICENSE) for the full terms.
+`py6502` is licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0).
+In plain terms: you may use, change, and share it for personal, hobby,
+research, and educational purposes, and for non-profit or public-sector
+work. Commercial use is not permitted. Copyright is retained by Ricky
+Groenewald.
+
+The full terms are in [`LICENSE`](LICENSE). Any copy you distribute must
+also carry the `Required Notice:` line from [`NOTICE`](NOTICE).
