@@ -471,7 +471,11 @@ the load with a clear error message pointing at the offending line.
 9. **`buses` constraints.** v0.1 only accepts `main`.
 10. **Source URIs resolve.** `resource:` packages must be importable;
     `file:` paths (relative to the config's dir) must exist.
-11. *(reserved)*
+11. *(reserved)* — was the per-region `source` size check, removed in
+    [#56](https://github.com/ricky-groenewald/py6502/pull/56) when
+    binaries moved to the top-level `binaries:` list. The number is
+    kept so the `Rule N:` prefixes in loader error messages stay
+    stable.
 12. **Option targets resolve.** For every entry in `options:`, the
     declared `target:` path must resolve into the raw config (region
     name exists, list index in range, intermediate mappings are dicts

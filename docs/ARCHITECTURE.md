@@ -475,12 +475,17 @@ never O(cycles).**
 
 ### 5.2 System selector
 
-The system selector is a two-pane window: bundled presets discovered
-from `py6502.sim.assets.presets/*.yaml` and previously loaded user
-configs on the left, the selected system's details, its preset options
-(see [SYSTEM_CONFIG.md §3.8](SYSTEM_CONFIG.md#38-options)), and a
-custom-system builder on the right. "Load from file..." picks a user
-YAML. User config paths and the last-used option values persist in
+The system selector ("New System") is a two-pane window. The **left
+pane** picks what kind of system to launch, in three groups: bundled
+presets discovered from `py6502.sim.assets.presets/*.yaml`, previously
+loaded user configs (each with a remove button, plus "Load from
+file..." to add one), and a custom-system entry. The **right pane**
+shows and configures whatever is selected on the left: for a preset or
+user config, its name, description, author, tags, and the preset
+options rendered as widgets (see
+[SYSTEM_CONFIG.md §3.8](SYSTEM_CONFIG.md#38-options)); for the custom
+entry, the custom-system builder form. Launch and Cancel sit below both
+panes. User config paths and the last-used option values persist in
 `py6502_settings.json` in the per-user data directory
 (`src/py6502/ui/utils/paths.py`), alongside the DearPyGui layout file.
 
@@ -517,21 +522,22 @@ Py6502App.run() — DearPyGui frame loop
        │
        ├── drain UI key buffer → system.send_key(char)
        │
-       ├── system.run_for_microseconds(dt_µs)
-       │       │
-       │       ├── BusController.run_cycles(N)     # N = dt_µs × cpu_hz / 1e6
-       │       │       │
-       │       │       ▼
-       │       │   for _ in range(N): _mos6502_step(cpu)
-       │       │       │
-       │       │       ▼
-       │       │   each cycle reads/writes bus → component.read/write (cdef)
-       │       │
-       │       └── sync_display()  → display.render_framebuffer()
-       │               (cursor blink + index→RGBA flatten into the
-       │                raw-texture-bound buffer)
+       └── system.run_for_microseconds(dt_µs)
+               │
+               ├── BusController.run_cycles(N)     # N = dt_µs × cpu_hz / 1e6
+               │       │
+               │       ▼
+               │   for _ in range(N): _mos6502_step(cpu)
+               │       │
+               │       ▼
+               │   each cycle reads/writes bus → component.read/write (cdef)
+               │
+               └── sync_display()  → display.render_framebuffer()
+                       (cursor blink + index→RGBA flatten into the
+                        raw-texture-bound buffer)
        │
-       ├── debug panel refresh (register snapshot, memory monitor)
+       ├── debug panel refresh (every frame, running or paused, so
+       │   Step / Cycle results show up immediately)
        │
        ▼
   dpg.render_dearpygui_frame()   # DPG re-uploads the bound buffer to the GPU;
@@ -582,6 +588,8 @@ version:
 
 ## 8. Testing strategy
 
+### Present today
+
 - **Unit tests** under `tests/` cover the `System` build pipeline end
   to end: config loader (`test_system_loader.py`,
   `test_system_smoke.py`), validation rules (`test_options.py`,
@@ -593,19 +601,32 @@ version:
   for invalid opcodes (`test_invalid_opcode.py`) and unmapped memory
   (`test_unmapped_memory.py`). Plain `pytest` runs them in well under
   a second.
-- **Klaus Dormann functional test** and **Bruce Clark decimal test**
-  run by hand from local scripts today. Issue
-  [#50](https://github.com/ricky-groenewald/py6502/issues/50) (v0.2)
-  moves them into runners under `scripts/` that CI and contributors
-  invoke the same way. The upstream binaries are GPL-3.0, so they are
-  fetched at run time and never enter the repository.
-- A **hot-path guard test** that fails if any Python function is
-  reached from inside `run_cycles`, plus a recorded throughput
-  baseline, is [#79](https://github.com/ricky-groenewald/py6502/issues/79).
-  It lands before the bus refactor starts.
-- **CI** does not exist yet
-  ([#4](https://github.com/ricky-groenewald/py6502/issues/4)). It is
-  scheduled alongside #50 once the runners exist.
+- **Conformance, by hand.** The Klaus Dormann functional test and the
+  Bruce Clark decimal test pass, but the scripts that run them are
+  local-only on the maintainer's machine and are **not committed**.
+  The binaries come from
+  [amb5l/6502_65C02_functional_tests](https://github.com/amb5l/6502_65C02_functional_tests)
+  and are GPL-3.0, which is why neither they nor the scripts are in
+  this repository.
+
+### Planned
+
+- **Conformance runners in the repo** —
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50) (v0.2).
+  Thin runners under `scripts/` that fetch the binaries at run time,
+  so CI and contributors invoke them the same way and no GPL bytes
+  enter the distribution.
+- **Hot-path guard test and throughput baseline** —
+  [#79](https://github.com/ricky-groenewald/py6502/issues/79). Fails
+  if any Python function is reached from inside `run_cycles`. Lands
+  before the bus refactor starts.
+- **CI** — [#4](https://github.com/ricky-groenewald/py6502/issues/4).
+  Builds the extensions, runs `pytest` and the conformance runners.
+  Scheduled alongside
+  [#50](https://github.com/ricky-groenewald/py6502/issues/50).
+- **nestest** —
+  [#73](https://github.com/ricky-groenewald/py6502/issues/73), once
+  the NES CPU work lands.
 
 ---
 
