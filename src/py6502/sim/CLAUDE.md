@@ -145,10 +145,13 @@ up front and keep it cycle-exact.
   `scripts/` that fetch the upstream GPL-3.0 binaries at run time, so
   the same command works locally and in CI without bundling GPL bytes.
   A Klaus run takes ~96M cycles.
-- A dedicated **hot-path guard test** is planned in #79: it fails loudly
-  if someone reintroduces a Python call on the hot path. Once it lands,
-  treat a failure after your change as a real failure — don't "just bump
-  the threshold".
+- The **hot-path guard** (`tests/test_hot_path.py`) fails if any Python
+  function runs inside a sim call, and names the function. Treat a
+  failure after your change as a real failure; there is no threshold to
+  bump. It cannot see C-API work inside compiled code (dict lookups,
+  calls through untyped references), so also compare throughput before
+  and after with the method in
+  [`docs/PERFORMANCE.md`](../../../docs/PERFORMANCE.md).
 - No Python unit test is allowed to reach *into* a Cython class's internals
   with `cdef` access. Go through the Python-visible API. If the Python API
   doesn't expose something you need to verify, that's worth a conversation
@@ -160,8 +163,8 @@ up front and keep it cycle-exact.
 need:
 
 - The full Klaus + Bruce Clark suites green (run by hand until #50).
-- A before/after cycle count on a representative workload (e.g. 10 seconds
-  of wall-clock time booting wozmon and running a small program).
+- Before/after throughput, measured back to back with the method in
+  [`docs/PERFORMANCE.md`](../../../docs/PERFORMANCE.md).
 - A note in the PR description explaining *why* the change is correct,
   not just *what* it does.
 

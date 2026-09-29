@@ -581,8 +581,10 @@ version:
    time.
 4. **Coarse APIs at boundaries.** One `run_for_microseconds` call per
    frame, not one `clock()` call per cycle from Python.
-5. **Measure, don't guess.** The functional-test stress runner reports
-   cycles/sec — any PR that regresses it is suspect.
+5. **Measure, don't guess.** [`PERFORMANCE.md`](PERFORMANCE.md) holds
+   the throughput baseline and the method. Measure before and after,
+   back to back on the same machine; a PR that lowers throughput by
+   more than the noise is suspect.
 
 ---
 
@@ -601,6 +603,13 @@ version:
   for invalid opcodes (`test_invalid_opcode.py`) and unmapped memory
   (`test_unmapped_memory.py`). Plain `pytest` runs them in well under
   a second.
+- **Hot-path guard** (`test_hot_path.py`). Runs sim calls under a
+  `sys.setprofile` hook and fails if any Python function runs inside
+  them: `run_cycles` on bare RAM, and Apple I frames with keys typed.
+  A control test proves the hook still sees Python calls.
+- **Throughput baselines.** [`PERFORMANCE.md`](PERFORMANCE.md) records
+  the baselines, the machine and toolchain behind each, and the script
+  that measures them.
 - **Conformance, by hand.** The Klaus Dormann functional test and the
   Bruce Clark decimal test pass, but the scripts that run them are
   local-only on the maintainer's machine and are **not committed**.
@@ -616,10 +625,6 @@ version:
   Thin runners under `scripts/` that fetch the binaries at run time,
   so CI and contributors invoke them the same way and no GPL bytes
   enter the distribution.
-- **Hot-path guard test and throughput baseline** —
-  [#79](https://github.com/ricky-groenewald/py6502/issues/79). Fails
-  if any Python function is reached from inside `run_cycles`. Lands
-  before the bus refactor starts.
 - **CI** — [#4](https://github.com/ricky-groenewald/py6502/issues/4).
   Builds the extensions, runs `pytest` and the conformance runners.
   Scheduled alongside

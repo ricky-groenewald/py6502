@@ -26,11 +26,11 @@ separate, human-approved edit.
 ## What it scans
 
 Docs: `docs/ARCHITECTURE.md`, `docs/SYSTEM_CONFIG.md`,
-`docs/ROADMAP.md`, root `CLAUDE.md`, `src/py6502/sim/CLAUDE.md`,
-`src/py6502/ui/CLAUDE.md`, `README.md`, `src/py6502/sim/README.md`,
-`src/py6502/ui/README.md`, every `.claude/skills/*/SKILL.md`, every
-`.claude/agents/*.md`, and the module docstrings under
-`src/py6502/sim/system/`.
+`docs/ROADMAP.md`, `docs/PERFORMANCE.md`, root `CLAUDE.md`,
+`src/py6502/sim/CLAUDE.md`, `src/py6502/ui/CLAUDE.md`, `README.md`,
+`src/py6502/sim/README.md`, `src/py6502/ui/README.md`, every
+`.claude/skills/*/SKILL.md`, every `.claude/agents/*.md`, and the
+module docstrings under `src/py6502/sim/system/`.
 
 Use `Read`, `Grep`, `Glob`, and read-only `Bash` (`sed -n`, `grep`,
 `git ls-files`, `gh issue list`). Verify concrete claims against code,
