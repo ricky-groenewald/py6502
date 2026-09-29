@@ -72,6 +72,13 @@ play/                  Scratch 6502 asm + binaries; not part of the package
   wrong, leave a GitHub issue, don't fix it in the same PR.
 - **Documentation**: the three docs above are the contract. If a change
   invalidates anything in them, update the doc in the same PR as the code.
+- **Issue and PR numbers live in `docs/` only.** GitHub already links
+  each change to its issue and PR. Everywhere else (code, tests,
+  `CLAUDE.md` files, READMEs, skills, agents) describe the behaviour or
+  constraint in words, or point at the `docs/` section that carries the
+  number. The one exception is README's link to the upstream DearPyGui
+  issue, which is another project's tracker. `play/`, commit messages
+  and PR bodies are outside this rule.
 - **Performance**: the simulator's hot-path rules live in
   `src/py6502/sim/CLAUDE.md` and are load-bearing. When in doubt, "no Python
   loops in steady state" is the one rule that outranks everything.

@@ -38,7 +38,7 @@ not vibes. Every finding needs a code line that contradicts the doc.
 
 ## The checks
 
-Work through all ten. Skipping one is how drift survives a scan.
+Work through all eleven. Skipping one is how drift survives a scan.
 
 1. **Signatures and code blocks.** Every code block or inline signature
    in a doc vs the real `.pxd` / `.pyx` / `.py`: `Component`, `Memory`,
@@ -71,6 +71,17 @@ Work through all ten. Skipping one is how drift survives a scan.
 10. **In-source docstrings and comments.** Module and class docstrings
     that describe an older behaviour (a getter that used to render, a
     mode list missing a mode, a section number that moved).
+11. **Issue and PR numbers outside `docs/`.** Root `CLAUDE.md`
+    §Workflow keeps them inside `docs/`. Scan every tracked file
+    outside `docs/` and `play/`:
+
+    ```bash
+    git ls-files ':!docs/' ':!play/' | xargs grep -n -I -E \
+        '(^|[^&0-9A-Za-z/])#[0-9]+([^0-9A-Za-z-]|$)|issues/[0-9]+|pull/[0-9]+'
+    ```
+
+    Every hit is a finding except README's link to the upstream
+    DearPyGui issue.
 
 ## What it returns
 
