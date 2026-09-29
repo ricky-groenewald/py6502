@@ -126,7 +126,7 @@ src/py6502/            single top-level package
     ├── windows/       Video, debug, system selector, binary loader, etc.
     ├── widgets/       Reusable widgets (binary source picker)
     └── utils/         Key handler, settings, preset discovery, per-user paths
-docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP
+docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP, PERFORMANCE
 play/                  Hand-written 6502 asm + scratch experiments
 ```
 
@@ -140,6 +140,8 @@ The canonical docs are under [`docs/`](docs/):
   to describe machines and the component registry.
 - [`ROADMAP.md`](docs/ROADMAP.md) — milestones, scope, non-goals, git
   workflow.
+- [`PERFORMANCE.md`](docs/PERFORMANCE.md) — throughput baselines and
+  how to measure them.
 
 ## Contributing
 

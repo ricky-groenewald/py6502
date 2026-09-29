@@ -34,7 +34,7 @@ src/py6502/            single top-level package
 │   ├── system/        System façade + YAML loader + component registry
 │   └── assets/        Bundled BIOS ROMs, fonts, preset configs
 └── ui/                DearPyGui frontend (Py6502App + windows/widgets/utils)
-docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP
+docs/                  ARCHITECTURE, SYSTEM_CONFIG, ROADMAP, PERFORMANCE
 play/                  Scratch 6502 asm + binaries; not part of the package
 ```
 
