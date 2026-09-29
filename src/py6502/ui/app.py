@@ -3,7 +3,7 @@ Py6502App — DearPyGui shell that boots a configurable System preset and
 renders video + debug panels at the display's native refresh rate. The
 simulator is paced by wall-clock delta so its effective frequency stays
 locked to the configured ``cpu_hz`` regardless of UI frame rate. See
-GH #8 for v0.1 UI scope.
+``docs/ARCHITECTURE.md`` §5 for the frontend's scope and frame loop.
 """
 from pathlib import Path
 from time import perf_counter

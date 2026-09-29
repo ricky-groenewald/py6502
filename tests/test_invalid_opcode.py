@@ -1,5 +1,5 @@
 """
-Tests for invalid opcode handling (GH #25).
+Tests for invalid opcode handling.
 
 Verifies NOP mode (skip and continue) and crash mode (raises
 InvalidOPCode from run_cycles).

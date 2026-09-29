@@ -45,9 +45,9 @@ play/                  Scratch 6502 asm + binaries; not part of the package
 - **Run the UI**: `python -m py6502` → `src/py6502/__main__.py` (which
   just calls `Py6502App().run()`).
 - **Tests**: `pytest` runs the unit tests under `tests/` in under a
-  second. There is no CI yet (#4). The Klaus Dormann and Bruce Clark
-  conformance suites run by hand until #50 lands runners under
-  `scripts/`.
+  second. There is no CI yet. The Klaus Dormann and Bruce Clark
+  conformance suites run by hand until runners land under `scripts/`
+  (see `docs/ROADMAP.md`).
 - **Python**: `>=3.12`. Compile flags in `setup.py`: `-O3 -march=native -flto`
   (tuned for the host CPU — expect rebuilds when moving machines).
 

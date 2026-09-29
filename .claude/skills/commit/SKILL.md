@@ -198,7 +198,8 @@ After the commit lands, and **only** after, run the PR flow:
    Fix every hit on the branch before opening the PR. If a hit is
    genuinely out of scope, list it under a `Docs touched` line in the
    PR body so it is tracked, not forgotten. Root `CLAUDE.md` makes the
-   three `docs/` files a contract: code and doc change in the same PR.
+   three canonical docs (ARCHITECTURE, SYSTEM_CONFIG, ROADMAP) a
+   contract: code and doc change in the same PR.
 
    Then check that the branch adds no issue or PR numbers outside
    `docs/` (root `CLAUDE.md` §Workflow):

@@ -141,7 +141,7 @@ up front and keep it cycle-exact.
   `System` with exactly the components the test needs.
 - **Klaus Dormann 6502 functional test** and **Bruce Clark decimal test**
   run by hand today from a local scratch script; they are not in the
-  repo or in CI. #50 (v0.2) adds thin conformance runners under
+  repo or in CI. v0.2 adds thin conformance runners under
   `scripts/` that fetch the upstream GPL-3.0 binaries at run time, so
   the same command works locally and in CI without bundling GPL bytes.
   A Klaus run takes ~96M cycles.
@@ -162,7 +162,8 @@ up front and keep it cycle-exact.
 `cpu/mos6502.pyx` is the most load-bearing file in the repo. Changes here
 need:
 
-- The full Klaus + Bruce Clark suites green (run by hand until #50).
+- The full Klaus + Bruce Clark suites green (run by hand until the
+  conformance runners land).
 - Before/after throughput, measured back to back with the method in
   [`docs/PERFORMANCE.md`](../../../docs/PERFORMANCE.md).
 - A note in the PR description explaining *why* the change is correct,

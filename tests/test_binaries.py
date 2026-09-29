@@ -1,5 +1,5 @@
 """
-Tests for the top-level `binaries:` config section (issue #42).
+Tests for the top-level `binaries:` config section.
 
 Binaries are loaded during ``System.__init__`` before reset, so the bytes
 are observable via ``System.peek``. Coverage validation lives in the

@@ -1,12 +1,13 @@
 ---
 name: docs-drift
-description: Scan every doc, README, CLAUDE.md, skill, and agent file for claims that contradict the code. Report only; never edits. Use before a release, at the end of a milestone (#64), or when a PR renamed public symbols. Invoke as `/docs-drift` for the full scan, or `/docs-drift <path>` to limit the scan to one doc.
+description: Scan every doc, README, CLAUDE.md, skill, and agent file for claims that contradict the code. Report only; never edits. Use before a release, at the end of a milestone, or when a PR renamed public symbols. Invoke as `/docs-drift` for the full scan, or `/docs-drift <path>` to limit the scan to one doc.
 ---
 
 # docs-drift
 
-A read-only audit. The three files under `docs/` are a contract (root
-`CLAUDE.md` §Documentation), and the per-package `CLAUDE.md`, README,
+A read-only audit. The three canonical docs (ARCHITECTURE,
+SYSTEM_CONFIG, ROADMAP) are a contract (root `CLAUDE.md`
+§Documentation), and the per-package `CLAUDE.md`, README,
 skill, and agent files are what humans and Claude read before touching
 code. When any of them describes something the code no longer does, the
 next change built on that description is wrong before it starts. This
@@ -17,7 +18,7 @@ separate, human-approved edit.
 
 - Before cutting a release (`dev` → `main`).
 - At the end of a milestone, as the first half of the cleanup pass
-  (see #64).
+  listed in `docs/ROADMAP.md`.
 - After any PR that renamed, re-signatured, moved, or removed a public
   symbol, file, or config key. The `/commit pr` doc-drift check catches
   the names a branch touched; this skill catches everything else.
@@ -129,4 +130,5 @@ one line rather than omitting it, so the caller knows it was checked.
   version of this scan that runs before every PR.
 - `.claude/skills/roadmap/SKILL.md` — the sibling read-mostly skill,
   and the template for how a skill documents its boundaries.
-- #64 — the end-of-milestone cleanup pass this skill feeds.
+- `docs/ROADMAP.md` — lists the end-of-milestone cleanup pass this
+  skill feeds.
