@@ -1,5 +1,5 @@
 """
-Tests for ``System.load_binary_at`` (issue #57) — the runtime counterpart
+Tests for ``System.load_binary_at`` — the runtime counterpart
 to config-time binary loading.
 
 Mirrors the coverage cases in ``test_binaries.py`` but exercises an

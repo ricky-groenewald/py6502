@@ -1,5 +1,5 @@
 """
-Tests for unmapped memory handling (GH #25).
+Tests for unmapped memory handling.
 
 Verifies open-bus mode (returns last data bus value) and crash mode
 (raises UnallocatedAddressError from run_cycles). Also tests the

@@ -1,12 +1,13 @@
 ---
 name: docs-drift
-description: Scan every doc, README, CLAUDE.md, skill, and agent file for claims that contradict the code. Report only; never edits. Use before a release, at the end of a milestone (#64), or when a PR renamed public symbols. Invoke as `/docs-drift` for the full scan, or `/docs-drift <path>` to limit the scan to one doc.
+description: Scan every doc, README, CLAUDE.md, skill, and agent file for claims that contradict the code. Report only; never edits. Use before a release, at the end of a milestone, or when a PR renamed public symbols. Invoke as `/docs-drift` for the full scan, or `/docs-drift <path>` to limit the scan to one doc.
 ---
 
 # docs-drift
 
-A read-only audit. The three files under `docs/` are a contract (root
-`CLAUDE.md` §Documentation), and the per-package `CLAUDE.md`, README,
+A read-only audit. The three canonical docs (ARCHITECTURE,
+SYSTEM_CONFIG, ROADMAP) are a contract (root `CLAUDE.md`
+§Documentation), and the per-package `CLAUDE.md`, README,
 skill, and agent files are what humans and Claude read before touching
 code. When any of them describes something the code no longer does, the
 next change built on that description is wrong before it starts. This
@@ -17,7 +18,7 @@ separate, human-approved edit.
 
 - Before cutting a release (`dev` → `main`).
 - At the end of a milestone, as the first half of the cleanup pass
-  (see #64).
+  listed in `docs/ROADMAP.md`.
 - After any PR that renamed, re-signatured, moved, or removed a public
   symbol, file, or config key. The `/commit pr` doc-drift check catches
   the names a branch touched; this skill catches everything else.
@@ -38,7 +39,7 @@ not vibes. Every finding needs a code line that contradicts the doc.
 
 ## The checks
 
-Work through all ten. Skipping one is how drift survives a scan.
+Work through all eleven. Skipping one is how drift survives a scan.
 
 1. **Signatures and code blocks.** Every code block or inline signature
    in a doc vs the real `.pxd` / `.pyx` / `.py`: `Component`, `Memory`,
@@ -71,6 +72,17 @@ Work through all ten. Skipping one is how drift survives a scan.
 10. **In-source docstrings and comments.** Module and class docstrings
     that describe an older behaviour (a getter that used to render, a
     mode list missing a mode, a section number that moved).
+11. **Issue and PR numbers outside `docs/`.** Root `CLAUDE.md`
+    §Workflow keeps them inside `docs/`. Scan every tracked file
+    outside `docs/` and `play/`:
+
+    ```bash
+    git ls-files ':!docs/' ':!play/' | xargs grep -n -I -E \
+        '(^|[^&0-9A-Za-z/])#[0-9]+([^0-9A-Za-z-]|$)|issues/[0-9]+|pull/[0-9]+'
+    ```
+
+    Every hit is a finding except README's link to the upstream
+    DearPyGui issue.
 
 ## What it returns
 
@@ -118,4 +130,5 @@ one line rather than omitting it, so the caller knows it was checked.
   version of this scan that runs before every PR.
 - `.claude/skills/roadmap/SKILL.md` — the sibling read-mostly skill,
   and the template for how a skill documents its boundaries.
-- #64 — the end-of-milestone cleanup pass this skill feeds.
+- `docs/ROADMAP.md` — lists the end-of-milestone cleanup pass this
+  skill feeds.
