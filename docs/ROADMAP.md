@@ -178,7 +178,7 @@ foundation bullets below and `docs/ARCHITECTURE.md` §4.
 - [#67](https://github.com/ricky-groenewald/py6502/issues/67) — NMI / IRQ wiring for NES peripherals
 - [#68](https://github.com/ricky-groenewald/py6502/issues/68) — PPU bus: VRAM, nametable mirroring, palette RAM
 - [#69](https://github.com/ricky-groenewald/py6502/issues/69) — PixelDisplay graphics primitive (bitmap framebuffer)
-- [#70](https://github.com/ricky-groenewald/py6502/issues/70) — PPU register window on main bus ($2000-$3FFF + $4014)
+- [#70](https://github.com/ricky-groenewald/py6502/issues/70) — PPU register window on main bus ($2000-$3FFF)
 - [#71](https://github.com/ricky-groenewald/py6502/issues/71) — Mapper component contract (runtime bank-switching shape)
 - [#72](https://github.com/ricky-groenewald/py6502/issues/72) — Bundled NES preset(s) + asset manifest entry
 - [#73](https://github.com/ricky-groenewald/py6502/issues/73) — nestest CPU conformance runner in CI
@@ -190,10 +190,11 @@ foundation bullets below and `docs/ARCHITECTURE.md` §4.
 - [#81](https://github.com/ricky-groenewald/py6502/issues/81) — BusController address mask, remove_component, and Memory mirrors
 - [#82](https://github.com/ricky-groenewald/py6502/issues/82) — Schema version 2: master clock, processors list, component ids, mirrors field
 - [#83](https://github.com/ricky-groenewald/py6502/issues/83) — Cross-component references and lifecycle fan-out
-- [#84](https://github.com/ricky-groenewald/py6502/issues/84) — CPU interrupt line model
+- [#84](https://github.com/ricky-groenewald/py6502/issues/84) — CPU input lines: IRQ, NMI, and RDY
 - [#85](https://github.com/ricky-groenewald/py6502/issues/85) — Expose illegal-opcode mode in the UI
 - [#86](https://github.com/ricky-groenewald/py6502/issues/86) — Document the MOS6502 cycle state machine
 - [#89](https://github.com/ricky-groenewald/py6502/issues/89) — Config errors carry file name and line number
+- [#90](https://github.com/ricky-groenewald/py6502/issues/90) — NES I/O register window component ($4000-$401F)
 
 #2 and #4 are "v0.1 foundation" issues that live in the v0.2 milestone only
 because pytest/CI work will grow substantially as NES features land. The
