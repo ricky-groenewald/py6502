@@ -120,10 +120,12 @@ The contract, in order:
 3. **No `Co-Authored-By:` trailer. Ever.** Not for Claude, not for any
    variation of Claude, not "Generated with", not "🤖". Human
    authorship is the default in this repo, full stop.
-4. **No issue-closing keywords in the commit itself** (`Closes #34`,
-   `Fixes #29`). Those belong in the PR description, where GitHub
-   actually wires them up. The commit references the work, the PR
-   closes the issue.
+4. **No issue-closing keywords in the commit itself** (`Closes #<n>`,
+   `Fixes #<n>`). They go in the PR description. PRs here target
+   `dev`, and GitHub only acts on closing keywords in PRs into the
+   default branch (`main`), so the line is a record, not a trigger:
+   after the PR merges, close each listed issue by hand with
+   `gh issue close <n>`.
 
 Pass multi-line messages via a HEREDOC so formatting is preserved:
 
@@ -196,7 +198,20 @@ After the commit lands, and **only** after, run the PR flow:
    Fix every hit on the branch before opening the PR. If a hit is
    genuinely out of scope, list it under a `Docs touched` line in the
    PR body so it is tracked, not forgotten. Root `CLAUDE.md` makes the
-   three `docs/` files a contract: code and doc change in the same PR.
+   three canonical docs (ARCHITECTURE, SYSTEM_CONFIG, ROADMAP) a
+   contract: code and doc change in the same PR.
+
+   Then check that the branch adds no issue or PR numbers outside
+   `docs/` (root `CLAUDE.md` §Workflow):
+
+   ```bash
+   git diff dev...HEAD -U0 -- . ':!docs/' ':!play/' | grep '^+' \
+       | grep -E '(^|[^&0-9A-Za-z/])#[0-9]+([^0-9A-Za-z-]|$)|issues/[0-9]+|pull/[0-9]+'
+   ```
+
+   Reword every hit in words, or point at the `docs/` section that
+   carries the number. The only allowed hit is README's link to the
+   upstream DearPyGui issue.
 
 4. **Draft the PR body** using this template, filled from the commits +
    diff:
@@ -214,8 +229,8 @@ After the commit lands, and **only** after, run the PR flow:
    - [ ] <specific manual or automated check>
 
    ## Closes
-   <GitHub issue references, e.g. `Closes #29`, `Closes #34` — only if
-   the branch genuinely closes them>
+   <`Closes #<n>` for each issue the branch genuinely closes. GitHub
+   won't close them on merge into `dev`; close them by hand afterwards>
    ```
 
    Keep the summary tight (3–6 bullets). The *why* paragraph is the
@@ -237,7 +252,8 @@ After the commit lands, and **only** after, run the PR flow:
    headline verbatim.
 
 6. Print the PR URL that `gh pr create` returned so the caller can
-   click through.
+   click through, and list the issues under `## Closes` that need
+   closing by hand once it merges.
 
 Never PR directly into `main`. Versioned releases are the only path
 into `main`, and they're human-driven. If the caller asks for a

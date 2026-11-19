@@ -185,7 +185,6 @@ foundation bullets below and `docs/ARCHITECTURE.md` §4.
 - [#74](https://github.com/ricky-groenewald/py6502/issues/74) — PAL NES sim-side support
 - [#75](https://github.com/ricky-groenewald/py6502/issues/75) — Save states (snapshot + restore emulator state)
 - [#77](https://github.com/ricky-groenewald/py6502/issues/77) — Audit indexed-addressing dummy-read addresses across all opcode families
-- [#79](https://github.com/ricky-groenewald/py6502/issues/79) — Hot-path Python-call guard test and v0.1 performance baseline
 - [#80](https://github.com/ricky-groenewald/py6502/issues/80) — Decouple the cycle pump from BusController into System
 - [#81](https://github.com/ricky-groenewald/py6502/issues/81) — BusController address mask, remove_component, and Memory mirrors
 - [#82](https://github.com/ricky-groenewald/py6502/issues/82) — Schema version 2: master clock, processors list, component ids, mirrors field
@@ -195,6 +194,7 @@ foundation bullets below and `docs/ARCHITECTURE.md` §4.
 - [#86](https://github.com/ricky-groenewald/py6502/issues/86) — Document the MOS6502 cycle state machine
 - [#89](https://github.com/ricky-groenewald/py6502/issues/89) — Config errors carry file name and line number
 - [#90](https://github.com/ricky-groenewald/py6502/issues/90) — NES I/O register window component ($4000-$401F)
+- [#91](https://github.com/ricky-groenewald/py6502/issues/91) — Keep issue and PR numbers inside docs/ only
 
 #2 and #4 are "v0.1 foundation" issues that live in the v0.2 milestone only
 because pytest/CI work will grow substantially as NES features land. The
@@ -230,6 +230,7 @@ fixture scaffolding itself ships in v0.1; v0.2 expands it.
 - [#21](https://github.com/ricky-groenewald/py6502/issues/21) — Customize and package dearpygui/imgui
 - [#24](https://github.com/ricky-groenewald/py6502/issues/24) — Enable saving of code snippets
 - [#26](https://github.com/ricky-groenewald/py6502/issues/26) — Character Map / Sprite Editors
+- [#92](https://github.com/ricky-groenewald/py6502/issues/92) — Pin the Cython build dependency
 
 ---
 

@@ -80,8 +80,8 @@ Controls:
 - **Step** — advance one full 6502 instruction (only when paused)
 - **Cycle** — advance one CPU clock cycle (only when paused)
 - **Reset** — reset the CPU. Peripherals keep their state today;
-  [#83](https://github.com/ricky-groenewald/py6502/issues/83) extends
-  reset to every component.
+  resetting every component is planned for v0.2 (see
+  [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 
 ### Loading binaries
 
@@ -97,8 +97,8 @@ default address.
 - **Halt on invalid opcode** — raise an error on undefined opcodes.
   When off, undefined opcodes run as 2-cycle NOPs. A third mode that
   simulates the NMOS illegal opcodes exists at the `System` API
-  (`set_invalid_opcode_mode(2)`); exposing it in the UI is
-  [#85](https://github.com/ricky-groenewald/py6502/issues/85).
+  (`set_invalid_opcode_mode(2)`); a UI toggle for it is planned (see
+  [`docs/ROADMAP.md`](docs/ROADMAP.md)).
 - **Halt on unmapped memory** — raise an error on access to unmapped
   addresses
 

@@ -176,9 +176,9 @@ memory:
         from_yaml_text(text, base_dir=tmp_path)
 
 
-def test_per_region_source_rejected_post_42(tmp_path: Path) -> None:
+def test_per_region_source_rejected(tmp_path: Path) -> None:
     """
-    #42 moved binary sources to a top-level `binaries:` section. The old
+    Binary sources moved to a top-level `binaries:` section. The old
     per-region `source` / `load_offset` fields must now fail Rule 3 as
     unknown fields — a clean break, no silent migration.
     """
